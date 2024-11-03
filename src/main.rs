@@ -1,6 +1,7 @@
 use colored::*;
-use minijinja::Environment;
-use serde::Deserialize;
+use minijinja::{Environment, value::Value as MiniJinjaValue};
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use ssh2::Session;
 use std::collections::HashMap;
 use std::env;
@@ -34,8 +35,10 @@ struct Deployment {
 struct Task {
     name: String,
     shell: Option<String>,
+    command: Option<String>,
     register: Option<String>,
     debug: Option<Debug>,
+    vars: Option<HashMap<String, String>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -43,11 +46,18 @@ struct Debug {
     msg: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 struct Register {
     stdout: String,
     stderr: String,
     rc: i32,
+}
+
+// Custom from_json filter
+fn from_json_filter(value: MiniJinjaValue) -> Result<MiniJinjaValue, minijinja::Error> {
+    let json_str = value.as_str().ok_or_else(|| minijinja::Error::new(minijinja::ErrorKind::InvalidOperation, "Expected a string"))?;
+    let json_value: Value = serde_json::from_str(json_str).map_err(|e| minijinja::Error::new(minijinja::ErrorKind::InvalidOperation, e.to_string()))?;
+    Ok(MiniJinjaValue::from_serialize(&json_value))
 }
 
 fn read_yaml<T>(filename: &str) -> Result<T, Box<dyn std::error::Error>>
@@ -99,19 +109,23 @@ fn execute_task(
     Ok((stdout, stderr, exit_status))
 }
 
-fn replace_placeholders(msg: &str, register_map: &HashMap<String, Register>) -> String {
-    let env = Environment::new();
+fn replace_placeholders(msg: &str, register_map: &HashMap<String, Register>, vars: &HashMap<String, Value>) -> String {
+    let mut env = Environment::new();
+    env.add_filter("from_json", from_json_filter); // Register the custom filter
     let template = env.template_from_str(msg).unwrap();
-    let context: HashMap<String, HashMap<&str, String>> = register_map
-        .iter()
-        .map(|(k, v)| {
-            let mut map = HashMap::new();
-            map.insert("stdout", v.stdout.clone());
-            map.insert("stderr", v.stderr.clone());
-            map.insert("rc", v.rc.to_string());
-            (k.clone(), map)
-        })
-        .collect();
+    let mut context = HashMap::new();
+
+    for (key, value) in register_map {
+        context.insert(key.clone(), serde_json::to_value(value).unwrap());
+    }
+
+    for (key, value) in vars {
+        context.insert(key.clone(), value.clone());
+    }
+
+    // Debug print to verify context
+    // println!("Context: {:?}", context);
+
     template.render(&context).unwrap()
 }
 
@@ -124,7 +138,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let server_config: ServerConfig = read_yaml("servers.yml")?;
     let deployment: Vec<Deployment> = read_yaml(deploy_file)?;
-    let mut register_map: HashMap<String, Register> = HashMap::new(); // Change the type of register_map
+    let mut register_map: HashMap<String, Register> = HashMap::new();
+    let mut vars_map: HashMap<String, Value> = HashMap::new(); // Add vars_map to store variables
 
     for dep in deployment {
         println!("{}", format!("Starting deployment: {}\n", dep.name).green()); // Print deployment name in green
@@ -177,10 +192,57 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
 
+                if let Some(command) = task.command {
+                    println!("{}", format!("> {}", command).magenta());
+
+                    let display_output = task.register.is_none();
+                    match execute_task(&session, &command, display_output) {
+                        Ok((stdout, stderr, exit_status)) => {
+                            if exit_status != 0 {
+                                return Err(format!("Command execution failed with exit status: {}. Stopping further tasks.", exit_status).red().into());
+                            }
+
+                            if let Some(register) = &task.register {
+                                register_map.insert(
+                                    register.clone(),
+                                    Register {
+                                        stdout: stdout.clone(),
+                                        stderr: stderr.clone(),
+                                        rc: exit_status,
+                                    },
+                                );
+                                println!(
+                                    "{}",
+                                    format!("Registering output to: {}", register).yellow()
+                                );
+                            }
+                        }
+                        Err(e) => {
+                            return Err(format!(
+                                "Command execution failed with error: {}. Stopping further tasks.",
+                                e
+                            )
+                            .red()
+                            .into());
+                        }
+                    }
+                }
+
+                if let Some(vars) = &task.vars {
+                    for (key, value) in vars {
+                        let evaluated_value = replace_placeholders(&value, &register_map, &vars_map);
+                        let json_value: Value = serde_json::from_str(&evaluated_value)?;
+                        vars_map.insert(key.clone(), json_value);
+                    }
+                }
+
+                // Debug print to verify vars_map
+                // println!("Vars map: {:?}", vars_map);
+
                 // Use the debug field if present
                 if let Some(debug) = &task.debug {
                     // Replace placeholders with registered values
-                    let debug_msg = replace_placeholders(&debug.msg, &register_map);
+                    let debug_msg = replace_placeholders(&debug.msg, &register_map, &vars_map);
                     print!("{}", format!("Debug:\n{}", debug_msg).blue()); // Print debug message in blue
                 }
 
