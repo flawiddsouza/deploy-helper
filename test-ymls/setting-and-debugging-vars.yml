@@ -1,0 +1,12 @@
+---
+  - name: Test
+    hosts: local
+    tasks:
+      - name: Set vars
+        vars:
+          cat: "This is cat"
+          hey: "This is hey"
+
+      - name: Display the output of set vars
+        debug:
+          msg: "The property value is {{ cat }} {{ hey }}"

@@ -332,7 +332,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 if let Some(vars) = &task.vars {
                     for (key, value) in vars {
                         let evaluated_value = replace_placeholders(&value, &register_map, &vars_map);
-                        let json_value: Value = serde_json::from_str(&evaluated_value)?;
+                        let json_value = Value::String(evaluated_value);
                         vars_map.insert(key.clone(), json_value);
                     }
                 }
