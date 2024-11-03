@@ -22,6 +22,7 @@ struct TargetHost {
     host: String,
     port: Option<u16>,
     user: Option<String>,
+    password: Option<String>,
     ssh_key: Option<String>,
 }
 
@@ -90,13 +91,21 @@ fn setup_ssh_session(
     host: &str,
     port: u16,
     user: &str,
-    ssh_key_path: &str,
+    password: Option<&str>,
+    ssh_key_path: Option<&str>,
 ) -> Result<Session, Box<dyn std::error::Error>> {
     let tcp = TcpStream::connect((host, port))?;
     let mut session = Session::new()?;
     session.set_tcp_stream(tcp);
     session.handshake()?;
-    session.userauth_pubkey_file(user, None, Path::new(ssh_key_path), None)?;
+
+    if let Some(key_path) = ssh_key_path {
+        session.userauth_pubkey_file(user, None, Path::new(key_path), None)?;
+    } else if let Some(pwd) = password {
+        session.userauth_password(user, pwd)?;
+    } else {
+        return Err("Either ssh_key_path or password must be provided".into());
+    }
 
     if !session.authenticated() {
         return Err("Authentication failed".into());
@@ -218,12 +227,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let session = if !is_localhost {
                 let port = target_host.port.ok_or("Missing port for remote host")?;
                 let user = target_host.user.as_deref().ok_or("Missing user for remote host")?;
-                let ssh_key = target_host.ssh_key.as_deref().ok_or("Missing ssh_key for remote host")?;
+                let password = target_host.password.as_deref();
+                let ssh_key = target_host.ssh_key.as_deref();
 
                 Some(setup_ssh_session(
                     &target_host.host,
                     port,
                     user,
+                    password,
                     ssh_key,
                 )?)
             } else {
