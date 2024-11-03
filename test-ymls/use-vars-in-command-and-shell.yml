@@ -1,0 +1,14 @@
+---
+  - name: Test
+    hosts: local
+    tasks:
+      - name: Set vars
+        vars:
+          command1: "echo 'Hello'"
+          command2: "echo 'World'"
+
+      - name: Run first command
+        command: "{{ command1 }}"
+
+      - name: Run second command
+        shell: "{{ command2 }} | tr '[:lower:]' '[:upper:]'"

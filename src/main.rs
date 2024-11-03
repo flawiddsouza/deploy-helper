@@ -245,13 +245,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 println!("{}", format!("Executing task: {}", task.name).cyan()); // Print task name in cyan
 
                 if let Some(shell_command) = task.shell {
-                    println!("{}", format!("> {}", shell_command).magenta()); // Print command being run in magenta
+                    // Substitute Jinja variables in shell_command
+                    let substituted_shell_command = replace_placeholders(&shell_command, &register_map, &vars_map);
+                    println!("{}", format!("> {}", substituted_shell_command).magenta());
 
                     let display_output = task.register.is_none();
                     let result = if is_localhost {
-                        execute_local_task(&shell_command, true, display_output)
+                        execute_local_task(&substituted_shell_command, true, display_output)
                     } else {
-                        execute_task(session.as_ref().unwrap(), &shell_command, true, display_output)
+                        execute_task(session.as_ref().unwrap(), &substituted_shell_command, true, display_output)
                     };
 
                     match result {
@@ -288,13 +290,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
 
                 if let Some(command) = task.command {
-                    println!("{}", format!("> {}", command).magenta());
+                    // Substitute Jinja variables in command
+                    let substituted_command = replace_placeholders(&command, &register_map, &vars_map);
+                    println!("{}", format!("> {}", substituted_command).magenta());
 
                     let display_output = task.register.is_none();
                     let result = if is_localhost {
-                        execute_local_task(&command, false, display_output)
+                        execute_local_task(&substituted_command, false, display_output)
                     } else {
-                        execute_task(session.as_ref().unwrap(), &command, false, display_output)
+                        execute_task(session.as_ref().unwrap(), &substituted_command, false, display_output)
                     };
 
                     match result {
