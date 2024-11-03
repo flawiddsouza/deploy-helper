@@ -1,0 +1,78 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - '*'
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            suffix: linux
+            shell: bash
+          # - os: macos-latest
+          #   target: x86_64-apple-darwin
+          #   suffix: macos
+          #   shell: bash
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            suffix: windows.exe
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          target: ${{ matrix.target }}
+          override: true
+
+      - name: Build
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Collect Binaries (Linux and macOS)
+        if: runner.os != 'Windows'
+        run: |
+          mkdir -p artifacts
+          cp "target/${{ matrix.target }}/release/deploy-helper" "artifacts/deploy-helper-${{ matrix.suffix }}"
+
+      - name: Collect Binaries (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          mkdir artifacts
+          Copy-Item -Path ".\target\${{ matrix.target }}\release\deploy-helper.exe" -Destination ".\artifacts\deploy-helper-${{ matrix.suffix }}"
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: binaries
+          path: artifacts/*
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download Artifacts
+        uses: actions/download-artifact@v3
+        with:
+          name: binaries
+          path: artifacts
+
+      - name: Create GitHub Release
+        id: create_release
+        uses: softprops/action-gh-release@v2.0.9
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          draft: false
+          prerelease: false
+
+      - name: Upload Release Assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*
