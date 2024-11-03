@@ -70,6 +70,21 @@ where
     Ok(yaml_data)
 }
 
+fn read_yaml_multi<T>(filename: &str) -> Result<Vec<T>, Box<dyn std::error::Error>>
+where
+    T: for<'de> Deserialize<'de>,
+{
+    let contents = fs::read_to_string(filename)?;
+    let mut results = Vec::new();
+
+    for document in serde_yaml::Deserializer::from_str(&contents) {
+        let item = T::deserialize(document)?;
+        results.push(item);
+    }
+
+    Ok(results)
+}
+
 fn setup_ssh_session(
     host: &str,
     port: u16,
@@ -155,11 +170,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let deploy_file = &args[1];
 
     let server_config: ServerConfig = read_yaml("servers.yml")?;
-    let deployment: Vec<Deployment> = read_yaml(deploy_file)?;
+    let deployment_docs: Vec<Vec<Deployment>> = read_yaml_multi(deploy_file)?;
+    let deployments = deployment_docs.into_iter().flatten().collect::<Vec<_>>();
+
     let mut register_map: HashMap<String, Register> = HashMap::new();
     let mut vars_map: HashMap<String, Value> = HashMap::new(); // Add vars_map to store variables
 
-    for dep in deployment {
+    for dep in deployments {
         println!("{}", format!("Starting deployment: {}\n", dep.name).green()); // Print deployment name in green
 
         if let Some(target_host) = server_config.hosts.get(&dep.hosts) {
