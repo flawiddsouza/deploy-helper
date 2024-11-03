@@ -19,9 +19,9 @@ jobs:
           #   target: x86_64-apple-darwin
           #   suffix: macos
           #   shell: bash
-          - os: windows-latest
-            target: x86_64-pc-windows-msvc
-            suffix: windows.exe
+          # - os: windows-latest
+          #   target: x86_64-pc-windows-msvc
+          #   suffix: windows.exe
     steps:
       - uses: actions/checkout@v3
 

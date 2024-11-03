@@ -10,6 +10,7 @@ use std::io::prelude::*;
 use std::net::TcpStream;
 use std::path::Path;
 use std::process::Command;
+use std::process::Stdio;
 
 #[derive(Debug, Deserialize)]
 struct ServerConfig {
@@ -107,10 +108,15 @@ fn setup_ssh_session(
 fn execute_task(
     session: &Session,
     command: &str,
+    use_shell: bool,
     display_output: bool,
 ) -> Result<(String, String, i32), Box<dyn std::error::Error>> {
     let mut channel = session.channel_session()?;
-    channel.exec(command)?;
+    if use_shell {
+        channel.exec(&format!("sh -c \"{}\"", command))?;
+    } else {
+        channel.exec(command)?;
+    }
     let mut stdout = String::new();
     let mut stderr = String::new();
     channel.read_to_string(&mut stdout)?;
@@ -119,24 +125,52 @@ fn execute_task(
     channel.wait_close()?;
 
     if display_output {
-        println!("{}", format!("Output:\n{}", stdout).white()); // Print stdout in white if display_output is true
+        if !stdout.is_empty() {
+            println!("{}", format!("Output:\n{}", stdout).white());
+        }
+        if !stderr.is_empty() {
+            println!("{}", format!("Error Output:\n{}", stderr).red());
+        }
     }
 
     Ok((stdout, stderr, exit_status))
 }
 
-fn execute_local_task(command: &str, display_output: bool) -> Result<(String, String, i32), Box<dyn std::error::Error>> {
-    let output = Command::new("sh")
-        .arg("-c")
-        .arg(command)
-        .output()?;
+fn execute_local_task(command: &str, use_shell: bool, display_output: bool) -> Result<(String, String, i32), Box<dyn std::error::Error>> {
+    let output = if use_shell {
+        Command::new("sh")
+            .arg("-c")
+            .arg(command)
+            .output()?
+    } else {
+        // Split the command into program and arguments
+        let mut parts = shell_words::split(command).map_err(|e| format!("Failed to parse command: {}", e))?;
+        if parts.is_empty() {
+            return Err("Empty command provided".into());
+        }
+        let program = parts.remove(0);
+        Command::new(program)
+            .args(parts)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()?
+    };
 
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
     let exit_status = output.status.code().unwrap_or(-1);
 
     if display_output {
-        println!("{}", format!("Output:\n{}", stdout).white());
+        if !stdout.is_empty() {
+            println!("{}", format!("Output:\n{}", stdout).white());
+        }
+        if !stderr.is_empty() {
+            println!("{}", format!("Error Output:\n{}", stderr).red());
+        }
+    }
+
+    if exit_status != 0 {
+        return Err(format!("Command '{}' failed with exit status: {}", command, exit_status).into());
     }
 
     Ok((stdout, stderr, exit_status))
@@ -204,9 +238,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                     let display_output = task.register.is_none();
                     let result = if is_localhost {
-                        execute_local_task(&shell_command, display_output)
+                        execute_local_task(&shell_command, true, display_output)
                     } else {
-                        execute_task(session.as_ref().unwrap(), &shell_command, display_output)
+                        execute_task(session.as_ref().unwrap(), &shell_command, true, display_output)
                     };
 
                     match result {
@@ -247,9 +281,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                     let display_output = task.register.is_none();
                     let result = if is_localhost {
-                        execute_local_task(&command, display_output)
+                        execute_local_task(&command, false, display_output)
                     } else {
-                        execute_task(session.as_ref().unwrap(), &command, display_output)
+                        execute_task(session.as_ref().unwrap(), &command, false, display_output)
                     };
 
                     match result {
