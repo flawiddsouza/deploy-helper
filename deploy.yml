@@ -1,6 +1,6 @@
 ---
   - name: Connect to a remote host and run commands
-    hosts: my_host
+    hosts: local
     tasks:
       - name: List directory contents with ls
         shell: ls

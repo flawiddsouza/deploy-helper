@@ -9,6 +9,7 @@ use std::fs;
 use std::io::prelude::*;
 use std::net::TcpStream;
 use std::path::Path;
+use std::process::Command;
 
 #[derive(Debug, Deserialize)]
 struct ServerConfig {
@@ -18,9 +19,9 @@ struct ServerConfig {
 #[derive(Debug, Deserialize)]
 struct TargetHost {
     host: String,
-    port: u16,
-    user: String,
-    ssh_key: String,
+    port: Option<u16>,
+    user: Option<String>,
+    ssh_key: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -109,6 +110,23 @@ fn execute_task(
     Ok((stdout, stderr, exit_status))
 }
 
+fn execute_local_task(command: &str, display_output: bool) -> Result<(String, String, i32), Box<dyn std::error::Error>> {
+    let output = Command::new("sh")
+        .arg("-c")
+        .arg(command)
+        .output()?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    let exit_status = output.status.code().unwrap_or(-1);
+
+    if display_output {
+        println!("{}", format!("Output:\n{}", stdout).white());
+    }
+
+    Ok((stdout, stderr, exit_status))
+}
+
 fn replace_placeholders(msg: &str, register_map: &HashMap<String, Register>, vars: &HashMap<String, Value>) -> String {
     let mut env = Environment::new();
     env.add_filter("from_json", from_json_filter); // Register the custom filter
@@ -145,12 +163,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("{}", format!("Starting deployment: {}\n", dep.name).green()); // Print deployment name in green
 
         if let Some(target_host) = server_config.hosts.get(&dep.hosts) {
-            let session = setup_ssh_session(
-                &target_host.host,
-                target_host.port,
-                &target_host.user,
-                &target_host.ssh_key,
-            )?;
+            let is_localhost = target_host.host == "localhost";
+            let session = if !is_localhost {
+                let port = target_host.port.ok_or("Missing port for remote host")?;
+                let user = target_host.user.as_deref().ok_or("Missing user for remote host")?;
+                let ssh_key = target_host.ssh_key.as_deref().ok_or("Missing ssh_key for remote host")?;
+
+                Some(setup_ssh_session(
+                    &target_host.host,
+                    port,
+                    user,
+                    ssh_key,
+                )?)
+            } else {
+                None
+            };
 
             for task in dep.tasks {
                 println!("{}", format!("Executing task: {}", task.name).cyan()); // Print task name in cyan
@@ -159,7 +186,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     println!("{}", format!("> {}", shell_command).magenta()); // Print command being run in magenta
 
                     let display_output = task.register.is_none();
-                    match execute_task(&session, &shell_command, display_output) {
+                    let result = if is_localhost {
+                        execute_local_task(&shell_command, display_output)
+                    } else {
+                        execute_task(session.as_ref().unwrap(), &shell_command, display_output)
+                    };
+
+                    match result {
                         Ok((stdout, stderr, exit_status)) => {
                             if exit_status != 0 {
                                 return Err(format!("Command execution failed with exit status: {}. Stopping further tasks.", exit_status).red().into());
@@ -196,7 +229,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     println!("{}", format!("> {}", command).magenta());
 
                     let display_output = task.register.is_none();
-                    match execute_task(&session, &command, display_output) {
+                    let result = if is_localhost {
+                        execute_local_task(&command, display_output)
+                    } else {
+                        execute_task(session.as_ref().unwrap(), &command, display_output)
+                    };
+
+                    match result {
                         Ok((stdout, stderr, exit_status)) => {
                             if exit_status != 0 {
                                 return Err(format!("Command execution failed with exit status: {}. Stopping further tasks.", exit_status).red().into());
