@@ -1,0 +1,19 @@
+---
+  - name: Connect to a remote host and run commands
+    hosts: my_host
+    tasks:
+      - name: List directory contents with ls
+        shell: ls
+        register: ls_output
+
+      - name: Display the output of ls
+        debug:
+          msg: "{{ ls_output.stdout }}"
+
+      - name: Check disk space usage with df
+        shell: df -h
+        register: df_output
+
+      - name: Display the output of df
+        debug:
+          msg: "{{ df_output.stdout }}"
