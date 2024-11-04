@@ -1,0 +1,11 @@
+---
+  - name: Test
+    hosts: local
+    chdir: tests/mocks/ls-dir
+    tasks:
+      - name: Global working directory
+        shell: cat file1.txt
+
+      - name: Task-level working directory
+        chdir: tests/mocks/ls-dir2
+        shell: cat file1.txt

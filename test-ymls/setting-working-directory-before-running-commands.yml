@@ -5,6 +5,7 @@
       - name: Set vars
         chdir: tests/mocks/ls-dir
         command: ls
+
       - name: Set vars
         chdir: tests/mocks/ls-dir2
         shell: ls

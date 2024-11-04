@@ -30,6 +30,7 @@ struct TargetHost {
 struct Deployment {
     name: String,
     hosts: String,
+    chdir: Option<String>,
     tasks: Vec<Task>,
 }
 
@@ -270,6 +271,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             for task in dep.tasks {
                 println!("{}", format!("Executing task: {}", task.name).cyan()); // Print task name in cyan
 
+                let task_chdir = task.chdir.as_deref().or(dep.chdir.as_deref());  // Use task-level chdir if present, otherwise use top-level chdir
+
                 if let Some(shell_command) = task.shell {
                     // Substitute Jinja variables in shell_command
                     let substituted_shell_command = replace_placeholders(&shell_command, &register_map, &vars_map);
@@ -277,9 +280,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                     let display_output = task.register.is_none();
                     let result = if is_localhost {
-                        execute_local_task(&substituted_shell_command, true, display_output, task.chdir.as_deref())
+                        execute_local_task(&substituted_shell_command, true, display_output, task_chdir)
                     } else {
-                        execute_task(session.as_ref().unwrap(), &substituted_shell_command, true, display_output, task.chdir.as_deref())
+                        execute_task(session.as_ref().unwrap(), &substituted_shell_command, true, display_output, task_chdir)
                     };
 
                     match result {
@@ -322,9 +325,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                     let display_output = task.register.is_none();
                     let result = if is_localhost {
-                        execute_local_task(&substituted_command, false, display_output, task.chdir.as_deref())
+                        execute_local_task(&substituted_command, false, display_output, task_chdir)
                     } else {
-                        execute_task(session.as_ref().unwrap(), &substituted_command, false, display_output, task.chdir.as_deref())
+                        execute_task(session.as_ref().unwrap(), &substituted_command, false, display_output, task_chdir)
                     };
 
                     match result {
