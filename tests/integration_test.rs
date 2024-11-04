@@ -65,7 +65,8 @@ Executing task: Set vars
 > ls
 Output:
 file1.txt
-file2.txt";
+file2.txt
+file3.txt";
 
     assert_eq!(stdout, expected_output);
 }
