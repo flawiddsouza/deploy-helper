@@ -1,0 +1,14 @@
+Starting deployment: Test
+
+Executing task: Set vars
+
+Executing task: Run first command
+> echo 'Hello'
+Output:
+Hello
+
+
+Executing task: Run second command
+> echo 'World' | tr '[:lower:]' '[:upper:]'
+Output:
+WORLD

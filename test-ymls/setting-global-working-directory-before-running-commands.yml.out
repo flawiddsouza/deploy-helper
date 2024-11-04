@@ -1,0 +1,12 @@
+Starting deployment: Test
+
+Executing task: Global working directory
+> cat file1.txt
+Output:
+File 1 of ls-dir
+
+
+Executing task: Task-level working directory
+> cat file1.txt
+Output:
+File 1 of ls-dir2

@@ -1,0 +1,7 @@
+Starting deployment: Test
+
+Executing task: Set vars
+
+Executing task: Parse to json
+Debug:
+AccessKeyId: abc, SecretAccessKey: def

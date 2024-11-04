@@ -1,0 +1,7 @@
+Starting deployment: Test
+
+Executing task: Set vars
+
+Executing task: Display the output of set vars
+Debug:
+The property value is This is cat This is hey

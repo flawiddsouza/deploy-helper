@@ -1,0 +1,15 @@
+Starting deployment: Test
+
+Executing task: Set vars
+> ls
+Output:
+file1.txt
+file2.txt
+
+
+Executing task: Set vars
+> ls
+Output:
+file1.txt
+file2.txt
+file3.txt
