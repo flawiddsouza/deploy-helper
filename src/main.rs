@@ -1,5 +1,5 @@
 use colored::*;
-use minijinja::{Environment, value::Value as MiniJinjaValue};
+use minijinja::{value::Value as MiniJinjaValue, Environment};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use ssh2::Session;
@@ -60,8 +60,12 @@ struct Register {
 
 // Custom from_json filter
 fn from_json_filter(value: MiniJinjaValue) -> Result<MiniJinjaValue, minijinja::Error> {
-    let json_str = value.as_str().ok_or_else(|| minijinja::Error::new(minijinja::ErrorKind::InvalidOperation, "Expected a string"))?;
-    let json_value: Value = serde_json::from_str(json_str).map_err(|e| minijinja::Error::new(minijinja::ErrorKind::InvalidOperation, e.to_string()))?;
+    let json_str = value.as_str().ok_or_else(|| {
+        minijinja::Error::new(minijinja::ErrorKind::InvalidOperation, "Expected a string")
+    })?;
+    let json_value: Value = serde_json::from_str(json_str).map_err(|e| {
+        minijinja::Error::new(minijinja::ErrorKind::InvalidOperation, e.to_string())
+    })?;
     Ok(MiniJinjaValue::from_serialize(&json_value))
 }
 
@@ -125,7 +129,15 @@ fn execute_task(
 ) -> Result<(String, String, i32), Box<dyn std::error::Error>> {
     let mut channel = session.channel_session()?;
     if let Some(dir) = chdir {
-        channel.exec(&format!("cd {} && {}", dir, if use_shell { format!("sh -c \"{}\"", command) } else { command.to_string() }))?;
+        channel.exec(&format!(
+            "cd {} && {}",
+            dir,
+            if use_shell {
+                format!("sh -c \"{}\"", command)
+            } else {
+                command.to_string()
+            }
+        ))?;
     } else {
         if use_shell {
             channel.exec(&format!("sh -c \"{}\"", command))?;
@@ -152,7 +164,12 @@ fn execute_task(
     Ok((stdout, stderr, exit_status))
 }
 
-fn execute_local_task(command: &str, use_shell: bool, display_output: bool, chdir: Option<&str>) -> Result<(String, String, i32), Box<dyn std::error::Error>> {
+fn execute_local_task(
+    command: &str,
+    use_shell: bool,
+    display_output: bool,
+    chdir: Option<&str>,
+) -> Result<(String, String, i32), Box<dyn std::error::Error>> {
     let output = if use_shell {
         if let Some(dir) = chdir {
             Command::new("sh")
@@ -160,14 +177,12 @@ fn execute_local_task(command: &str, use_shell: bool, display_output: bool, chdi
                 .arg(format!("cd {} && {}", dir, command))
                 .output()?
         } else {
-            Command::new("sh")
-                .arg("-c")
-                .arg(command)
-                .output()?
+            Command::new("sh").arg("-c").arg(command).output()?
         }
     } else {
         // Split the command into program and arguments
-        let mut parts = shell_words::split(command).map_err(|e| format!("Failed to parse command: {}", e))?;
+        let mut parts =
+            shell_words::split(command).map_err(|e| format!("Failed to parse command: {}", e))?;
         if parts.is_empty() {
             return Err("Empty command provided".into());
         }
@@ -196,13 +211,21 @@ fn execute_local_task(command: &str, use_shell: bool, display_output: bool, chdi
     }
 
     if exit_status != 0 {
-        return Err(format!("Command '{}' failed with exit status: {}", command, exit_status).into());
+        return Err(format!(
+            "Command '{}' failed with exit status: {}",
+            command, exit_status
+        )
+        .into());
     }
 
     Ok((stdout, stderr, exit_status))
 }
 
-fn replace_placeholders(msg: &str, register_map: &HashMap<String, Register>, vars: &HashMap<String, Value>) -> String {
+fn replace_placeholders(
+    msg: &str,
+    register_map: &HashMap<String, Register>,
+    vars: &HashMap<String, Value>,
+) -> String {
     let mut env = Environment::new();
     env.add_filter("from_json", from_json_filter); // Register the custom filter
     let template = env.template_from_str(msg).unwrap();
@@ -222,7 +245,11 @@ fn replace_placeholders(msg: &str, register_map: &HashMap<String, Register>, var
     template.render(&context).unwrap()
 }
 
-fn replace_placeholders_vars(msg: &str, register_map: &HashMap<String, Register>, vars: &HashMap<String, Value>) -> Value {
+fn replace_placeholders_vars(
+    msg: &str,
+    register_map: &HashMap<String, Register>,
+    vars: &HashMap<String, Value>,
+) -> Value {
     let rendered_str = replace_placeholders(msg, register_map, vars);
 
     if msg.contains("from_json") {
@@ -253,7 +280,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let is_localhost = target_host.host == "localhost";
             let session = if !is_localhost {
                 let port = target_host.port.ok_or("Missing port for remote host")?;
-                let user = target_host.user.as_deref().ok_or("Missing user for remote host")?;
+                let user = target_host
+                    .user
+                    .as_deref()
+                    .ok_or("Missing user for remote host")?;
                 let password = target_host.password.as_deref();
                 let ssh_key = target_host.ssh_key.as_deref();
 
@@ -271,18 +301,30 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             for task in dep.tasks {
                 println!("{}", format!("Executing task: {}", task.name).cyan()); // Print task name in cyan
 
-                let task_chdir = task.chdir.as_deref().or(dep.chdir.as_deref());  // Use task-level chdir if present, otherwise use top-level chdir
+                let task_chdir = task.chdir.as_deref().or(dep.chdir.as_deref()); // Use task-level chdir if present, otherwise use top-level chdir
 
                 if let Some(shell_command) = task.shell {
                     // Substitute Jinja variables in shell_command
-                    let substituted_shell_command = replace_placeholders(&shell_command, &register_map, &vars_map);
+                    let substituted_shell_command =
+                        replace_placeholders(&shell_command, &register_map, &vars_map);
                     println!("{}", format!("> {}", substituted_shell_command).magenta());
 
                     let display_output = task.register.is_none();
                     let result = if is_localhost {
-                        execute_local_task(&substituted_shell_command, true, display_output, task_chdir)
+                        execute_local_task(
+                            &substituted_shell_command,
+                            true,
+                            display_output,
+                            task_chdir,
+                        )
                     } else {
-                        execute_task(session.as_ref().unwrap(), &substituted_shell_command, true, display_output, task_chdir)
+                        execute_task(
+                            session.as_ref().unwrap(),
+                            &substituted_shell_command,
+                            true,
+                            display_output,
+                            task_chdir,
+                        )
                     };
 
                     match result {
@@ -320,14 +362,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                 if let Some(command) = task.command {
                     // Substitute Jinja variables in command
-                    let substituted_command = replace_placeholders(&command, &register_map, &vars_map);
+                    let substituted_command =
+                        replace_placeholders(&command, &register_map, &vars_map);
                     println!("{}", format!("> {}", substituted_command).magenta());
 
                     let display_output = task.register.is_none();
                     let result = if is_localhost {
                         execute_local_task(&substituted_command, false, display_output, task_chdir)
                     } else {
-                        execute_task(session.as_ref().unwrap(), &substituted_command, false, display_output, task_chdir)
+                        execute_task(
+                            session.as_ref().unwrap(),
+                            &substituted_command,
+                            false,
+                            display_output,
+                            task_chdir,
+                        )
                     };
 
                     match result {
@@ -364,7 +413,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                 if let Some(vars) = &task.vars {
                     for (key, value) in vars {
-                        let evaluated_value = replace_placeholders_vars(&value, &register_map, &vars_map);
+                        let evaluated_value =
+                            replace_placeholders_vars(&value, &register_map, &vars_map);
                         vars_map.insert(key.clone(), evaluated_value);
                     }
                 }

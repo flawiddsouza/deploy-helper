@@ -1,5 +1,5 @@
-use std::process::Command;
 use std::fs;
+use std::process::Command;
 
 fn run_test(yml_file: &str) {
     let output = Command::new("cargo")
@@ -10,8 +10,8 @@ fn run_test(yml_file: &str) {
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
 
-    let expected_output = fs::read_to_string(&format!("{}.out", yml_file))
-        .expect("Failed to read expected output");
+    let expected_output =
+        fs::read_to_string(&format!("{}.out", yml_file)).expect("Failed to read expected output");
 
     assert_eq!(stdout, expected_output);
 }
