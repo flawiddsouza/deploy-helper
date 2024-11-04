@@ -42,6 +42,7 @@ struct Task {
     register: Option<String>,
     debug: Option<Debug>,
     vars: Option<HashMap<String, String>>,
+    chdir: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -119,12 +120,17 @@ fn execute_task(
     command: &str,
     use_shell: bool,
     display_output: bool,
+    chdir: Option<&str>,
 ) -> Result<(String, String, i32), Box<dyn std::error::Error>> {
     let mut channel = session.channel_session()?;
-    if use_shell {
-        channel.exec(&format!("sh -c \"{}\"", command))?;
+    if let Some(dir) = chdir {
+        channel.exec(&format!("cd {} && {}", dir, if use_shell { format!("sh -c \"{}\"", command) } else { command.to_string() }))?;
     } else {
-        channel.exec(command)?;
+        if use_shell {
+            channel.exec(&format!("sh -c \"{}\"", command))?;
+        } else {
+            channel.exec(command)?;
+        }
     }
     let mut stdout = String::new();
     let mut stderr = String::new();
@@ -145,12 +151,19 @@ fn execute_task(
     Ok((stdout, stderr, exit_status))
 }
 
-fn execute_local_task(command: &str, use_shell: bool, display_output: bool) -> Result<(String, String, i32), Box<dyn std::error::Error>> {
+fn execute_local_task(command: &str, use_shell: bool, display_output: bool, chdir: Option<&str>) -> Result<(String, String, i32), Box<dyn std::error::Error>> {
     let output = if use_shell {
-        Command::new("sh")
-            .arg("-c")
-            .arg(command)
-            .output()?
+        if let Some(dir) = chdir {
+            Command::new("sh")
+                .arg("-c")
+                .arg(format!("cd {} && {}", dir, command))
+                .output()?
+        } else {
+            Command::new("sh")
+                .arg("-c")
+                .arg(command)
+                .output()?
+        }
     } else {
         // Split the command into program and arguments
         let mut parts = shell_words::split(command).map_err(|e| format!("Failed to parse command: {}", e))?;
@@ -158,8 +171,11 @@ fn execute_local_task(command: &str, use_shell: bool, display_output: bool) -> R
             return Err("Empty command provided".into());
         }
         let program = parts.remove(0);
-        Command::new(program)
-            .args(parts)
+        let mut cmd = Command::new(program);
+        if let Some(dir) = chdir {
+            cmd.current_dir(dir);
+        }
+        cmd.args(parts)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .output()?
@@ -251,9 +267,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                     let display_output = task.register.is_none();
                     let result = if is_localhost {
-                        execute_local_task(&substituted_shell_command, true, display_output)
+                        execute_local_task(&substituted_shell_command, true, display_output, task.chdir.as_deref())
                     } else {
-                        execute_task(session.as_ref().unwrap(), &substituted_shell_command, true, display_output)
+                        execute_task(session.as_ref().unwrap(), &substituted_shell_command, true, display_output, task.chdir.as_deref())
                     };
 
                     match result {
@@ -296,9 +312,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                     let display_output = task.register.is_none();
                     let result = if is_localhost {
-                        execute_local_task(&substituted_command, false, display_output)
+                        execute_local_task(&substituted_command, false, display_output, task.chdir.as_deref())
                     } else {
-                        execute_task(session.as_ref().unwrap(), &substituted_command, false, display_output)
+                        execute_task(session.as_ref().unwrap(), &substituted_command, false, display_output, task.chdir.as_deref())
                     };
 
                     match result {

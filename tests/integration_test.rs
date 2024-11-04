@@ -40,3 +40,32 @@ WORLD";
 
     assert_eq!(stdout, expected_output);
 }
+
+#[test]
+fn test_setting_working_directory_before_running_commands() {
+    let output = Command::new("cargo")
+        .args(&["run", "test-ymls/setting-working-directory-before-running-commands.yml"])
+        .output()
+        .expect("Failed to execute command");
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+
+    let expected_output = "\
+Starting deployment: Test
+
+Executing task: Set vars
+> ls
+Output:
+file1.txt
+file2.txt
+
+
+Executing task: Set vars
+> ls
+Output:
+file1.txt
+file2.txt";
+
+    assert_eq!(stdout, expected_output);
+}

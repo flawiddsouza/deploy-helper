@@ -1,0 +1,10 @@
+---
+  - name: Test
+    hosts: local
+    tasks:
+      - name: Set vars
+        chdir: tests/mocks/ls-dir
+        command: ls
+      - name: Set vars
+        chdir: tests/mocks/ls-dir
+        shell: ls
