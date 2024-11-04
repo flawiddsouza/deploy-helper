@@ -69,3 +69,25 @@ file2.txt";
 
     assert_eq!(stdout, expected_output);
 }
+
+#[test]
+fn test_nested_json_parsing() {
+    let output = Command::new("cargo")
+        .args(&["run", "test-ymls/nested-json-parsing.yml"])
+        .output()
+        .expect("Failed to execute command");
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+
+    let expected_output = "\
+Starting deployment: Test
+
+Executing task: Set vars
+
+Executing task: Parse to json
+Debug:
+AccessKeyId: abc, SecretAccessKey: def";
+
+    assert_eq!(stdout, expected_output);
+}

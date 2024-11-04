@@ -221,6 +221,16 @@ fn replace_placeholders(msg: &str, register_map: &HashMap<String, Register>, var
     template.render(&context).unwrap()
 }
 
+fn replace_placeholders_vars(msg: &str, register_map: &HashMap<String, Register>, vars: &HashMap<String, Value>) -> Value {
+    let rendered_str = replace_placeholders(msg, register_map, vars);
+
+    if msg.contains("from_json") {
+        serde_json::from_str(&rendered_str).unwrap()
+    } else {
+        Value::String(rendered_str)
+    }
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = env::args().collect();
     if args.len() < 2 {
@@ -351,9 +361,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                 if let Some(vars) = &task.vars {
                     for (key, value) in vars {
-                        let evaluated_value = replace_placeholders(&value, &register_map, &vars_map);
-                        let json_value = Value::String(evaluated_value);
-                        vars_map.insert(key.clone(), json_value);
+                        let evaluated_value = replace_placeholders_vars(&value, &register_map, &vars_map);
+                        vars_map.insert(key.clone(), evaluated_value);
                     }
                 }
 
