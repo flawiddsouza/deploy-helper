@@ -127,7 +127,9 @@ fn execute_task(
     display_output: bool,
     chdir: Option<&str>,
 ) -> Result<(String, String, i32), Box<dyn std::error::Error>> {
+    session.set_blocking(true); // Set to blocking mode
     let mut channel = session.channel_session()?;
+
     if let Some(dir) = chdir {
         channel.exec(&format!(
             "cd {} && {}",
@@ -145,21 +147,51 @@ fn execute_task(
             channel.exec(command)?;
         }
     }
+
     let mut stdout = String::new();
     let mut stderr = String::new();
-    channel.read_to_string(&mut stdout)?;
-    channel.stderr().read_to_string(&mut stderr)?;
-    let exit_status = channel.exit_status()?;
-    channel.wait_close()?;
+    let mut stdout_buffer = [0; 1024];
+    let mut stderr_buffer = [0; 1024];
 
-    if display_output {
-        if !stdout.is_empty() {
-            println!("{}", format!("Output:\n{}", stdout).white());
+    loop {
+        // Read stdout
+        match channel.read(&mut stdout_buffer) {
+            Ok(read_bytes) => {
+                if read_bytes > 0 {
+                    let output = String::from_utf8_lossy(&stdout_buffer[..read_bytes]);
+                    stdout.push_str(&output);
+                    if display_output {
+                        print!("{}", format!("{}", output).white());
+                    }
+                }
+            }
+            Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => (),
+            Err(e) => return Err(e.into()),
         }
-        if !stderr.is_empty() {
-            println!("{}", format!("Error Output:\n{}", stderr).red());
+
+        // Read stderr
+        match channel.stderr().read(&mut stderr_buffer) {
+            Ok(read_bytes) => {
+                if read_bytes > 0 {
+                    let error_output = String::from_utf8_lossy(&stderr_buffer[..read_bytes]);
+                    stderr.push_str(&error_output);
+                    if display_output {
+                        print!("{}", format!("{}", error_output).red());
+                    }
+                }
+            }
+            Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => (),
+            Err(e) => return Err(e.into()),
+        }
+
+        // Check if the channel is closed
+        if channel.eof() {
+            break;
         }
     }
+
+    channel.wait_close()?;
+    let exit_status = channel.exit_status()?;
 
     Ok((stdout, stderr, exit_status))
 }
@@ -170,55 +202,59 @@ fn execute_local_task(
     display_output: bool,
     chdir: Option<&str>,
 ) -> Result<(String, String, i32), Box<dyn std::error::Error>> {
-    let output = if use_shell {
-        if let Some(dir) = chdir {
-            Command::new("sh")
-                .arg("-c")
-                .arg(format!("cd {} && {}", dir, command))
-                .output()?
-        } else {
-            Command::new("sh").arg("-c").arg(command).output()?
-        }
+    let mut cmd = if use_shell {
+        let mut shell_cmd = Command::new("sh");
+        shell_cmd.arg("-c").arg(command);
+        shell_cmd
     } else {
-        // Split the command into program and arguments
-        let mut parts =
-            shell_words::split(command).map_err(|e| format!("Failed to parse command: {}", e))?;
-        if parts.is_empty() {
-            return Err("Empty command provided".into());
+        let parts = shell_words::split(command)
+            .map_err(|e| format!("Failed to parse command: {}", e))?;
+        let mut cmd = Command::new(&parts[0]);
+        if parts.len() > 1 {
+            cmd.args(&parts[1..]);
         }
-        let program = parts.remove(0);
-        let mut cmd = Command::new(program);
-        if let Some(dir) = chdir {
-            cmd.current_dir(dir);
-        }
-        cmd.args(parts)
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .output()?
+        cmd
     };
 
-    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-    let exit_status = output.status.code().unwrap_or(-1);
+    if let Some(dir) = chdir {
+        cmd.current_dir(dir);
+    }
 
-    if display_output {
-        if !stdout.is_empty() {
-            println!("{}", format!("Output:\n{}", stdout).white());
-        }
-        if !stderr.is_empty() {
-            println!("{}", format!("Error Output:\n{}", stderr).red());
+    cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+
+    let mut child = cmd.spawn()?;
+    let stdout = child.stdout.take().ok_or("Failed to open stdout")?;
+    let stderr = child.stderr.take().ok_or("Failed to open stderr")?;
+
+    let mut stdout_str = String::new();
+    let mut stderr_str = String::new();
+
+    let stdout_reader = std::io::BufReader::new(stdout).lines();
+    let stderr_reader = std::io::BufReader::new(stderr).lines();
+
+    for line in stdout_reader {
+        if let Ok(line) = line {
+            if display_output {
+                println!("{}", line.white());
+            }
+            stdout_str.push_str(&line);
+            stdout_str.push('\n');
         }
     }
 
-    if exit_status != 0 {
-        return Err(format!(
-            "Command '{}' failed with exit status: {}",
-            command, exit_status
-        )
-        .into());
+    for line in stderr_reader {
+        if let Ok(line) = line {
+            if display_output {
+                eprintln!("{}", line.red());
+            }
+            stderr_str.push_str(&line);
+            stderr_str.push('\n');
+        }
     }
 
-    Ok((stdout, stderr, exit_status))
+    let exit_status = child.wait()?.code().unwrap_or(-1);
+
+    Ok((stdout_str, stderr_str, exit_status))
 }
 
 fn replace_placeholders(

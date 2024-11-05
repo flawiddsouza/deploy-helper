@@ -2,8 +2,6 @@ Starting deployment: Test
 
 Executing task: exit code 1
 > echo "Hello"
-Output:
 Hello
-
 > false
-Error: Command execution failed with error: Command 'false' failed with exit status: 1. Stopping further tasks.
+Error: Command execution failed with exit status: 1. Stopping further tasks.
