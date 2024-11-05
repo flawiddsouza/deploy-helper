@@ -12,3 +12,5 @@ Executing task: Run second command
 > echo 'World' | tr '[:lower:]' '[:upper:]'
 Output:
 WORLD
+
+

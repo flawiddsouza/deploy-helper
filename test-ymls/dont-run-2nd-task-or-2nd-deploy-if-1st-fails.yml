@@ -1,0 +1,16 @@
+  - name: Test
+    hosts: local
+    tasks:
+      - name: exit code 1
+        shell: |
+          echo "Hello"
+          false
+          echo "World"
+      - name: Echo Test
+        shell: echo "Test"
+
+  - name: Test 2
+    hosts: local
+    tasks:
+      - name: Echo Test 2
+        shell: echo "Test 2"

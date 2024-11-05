@@ -307,55 +307,54 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     // Substitute Jinja variables in shell_command
                     let substituted_shell_command =
                         replace_placeholders(&shell_command, &register_map, &vars_map);
-                    println!("{}", format!("> {}", substituted_shell_command).magenta());
+                    let commands: Vec<&str> = substituted_shell_command.split('\n').collect();
 
-                    let display_output = task.register.is_none();
-                    let result = if is_localhost {
-                        execute_local_task(
-                            &substituted_shell_command,
-                            true,
-                            display_output,
-                            task_chdir,
-                        )
-                    } else {
-                        execute_task(
-                            session.as_ref().unwrap(),
-                            &substituted_shell_command,
-                            true,
-                            display_output,
-                            task_chdir,
-                        )
-                    };
+                    for cmd in commands {
+                        println!("{}", format!("> {}", cmd).magenta());
 
-                    match result {
-                        Ok((stdout, stderr, exit_status)) => {
-                            if exit_status != 0 {
-                                return Err(format!("Command execution failed with exit status: {}. Stopping further tasks.", exit_status).red().into());
-                            }
-
-                            // Store the output in the register map if register is present
-                            if let Some(register) = &task.register {
-                                register_map.insert(
-                                    register.clone(),
-                                    Register {
-                                        stdout: stdout.clone(),
-                                        stderr: stderr.clone(),
-                                        rc: exit_status,
-                                    },
-                                );
-                                println!(
-                                    "{}",
-                                    format!("Registering output to: {}", register).yellow()
-                                ); // Print register message in yellow
-                            }
-                        }
-                        Err(e) => {
-                            return Err(format!(
-                                "Command execution failed with error: {}. Stopping further tasks.",
-                                e
+                        let display_output = task.register.is_none();
+                        let result = if is_localhost {
+                            execute_local_task(cmd, true, display_output, task_chdir)
+                        } else {
+                            execute_task(
+                                session.as_ref().unwrap(),
+                                cmd,
+                                true,
+                                display_output,
+                                task_chdir,
                             )
-                            .red()
-                            .into());
+                        };
+
+                        match result {
+                            Ok((stdout, stderr, exit_status)) => {
+                                if exit_status != 0 {
+                                    return Err(format!("Command execution failed with exit status: {}. Stopping further tasks.", exit_status).red().into());
+                                }
+
+                                // Store the output in the register map if register is present
+                                if let Some(register) = &task.register {
+                                    register_map.insert(
+                                        register.clone(),
+                                        Register {
+                                            stdout: stdout.clone(),
+                                            stderr: stderr.clone(),
+                                            rc: exit_status,
+                                        },
+                                    );
+                                    println!(
+                                        "{}",
+                                        format!("Registering output to: {}", register).yellow()
+                                    ); // Print register message in yellow
+                                }
+                            }
+                            Err(e) => {
+                                return Err(format!(
+                                    "Command execution failed with error: {}. Stopping further tasks.",
+                                    e
+                                )
+                                .red()
+                                .into());
+                            }
                         }
                     }
                 }
@@ -364,49 +363,53 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     // Substitute Jinja variables in command
                     let substituted_command =
                         replace_placeholders(&command, &register_map, &vars_map);
-                    println!("{}", format!("> {}", substituted_command).magenta());
+                    let commands: Vec<&str> = substituted_command.split('\n').collect();
 
-                    let display_output = task.register.is_none();
-                    let result = if is_localhost {
-                        execute_local_task(&substituted_command, false, display_output, task_chdir)
-                    } else {
-                        execute_task(
-                            session.as_ref().unwrap(),
-                            &substituted_command,
-                            false,
-                            display_output,
-                            task_chdir,
-                        )
-                    };
+                    for cmd in commands {
+                        println!("{}", format!("> {}", cmd).magenta());
 
-                    match result {
-                        Ok((stdout, stderr, exit_status)) => {
-                            if exit_status != 0 {
-                                return Err(format!("Command execution failed with exit status: {}. Stopping further tasks.", exit_status).red().into());
-                            }
-
-                            if let Some(register) = &task.register {
-                                register_map.insert(
-                                    register.clone(),
-                                    Register {
-                                        stdout: stdout.clone(),
-                                        stderr: stderr.clone(),
-                                        rc: exit_status,
-                                    },
-                                );
-                                println!(
-                                    "{}",
-                                    format!("Registering output to: {}", register).yellow()
-                                );
-                            }
-                        }
-                        Err(e) => {
-                            return Err(format!(
-                                "Command execution failed with error: {}. Stopping further tasks.",
-                                e
+                        let display_output = task.register.is_none();
+                        let result = if is_localhost {
+                            execute_local_task(cmd, false, display_output, task_chdir)
+                        } else {
+                            execute_task(
+                                session.as_ref().unwrap(),
+                                cmd,
+                                false,
+                                display_output,
+                                task_chdir,
                             )
-                            .red()
-                            .into());
+                        };
+
+                        match result {
+                            Ok((stdout, stderr, exit_status)) => {
+                                if exit_status != 0 {
+                                    return Err(format!("Command execution failed with exit status: {}. Stopping further tasks.", exit_status).red().into());
+                                }
+
+                                if let Some(register) = &task.register {
+                                    register_map.insert(
+                                        register.clone(),
+                                        Register {
+                                            stdout: stdout.clone(),
+                                            stderr: stderr.clone(),
+                                            rc: exit_status,
+                                        },
+                                    );
+                                    println!(
+                                        "{}",
+                                        format!("Registering output to: {}", register).yellow()
+                                    );
+                                }
+                            }
+                            Err(e) => {
+                                return Err(format!(
+                                    "Command execution failed with error: {}. Stopping further tasks.",
+                                    e
+                                )
+                                .red()
+                                .into());
+                            }
                         }
                     }
                 }
