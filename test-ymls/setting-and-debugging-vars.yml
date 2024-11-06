@@ -10,3 +10,10 @@
       - name: Display the output of set vars
         debug:
           msg: "The property value is {{ cat }} {{ hey }}"
+
+      - name: Set vars & debug in the same task
+        vars:
+          cat2: "This is cat2"
+          hey2: "This is hey2"
+        debug:
+          msg: "The property value is {{ cat2 }} {{ hey2 }}"
