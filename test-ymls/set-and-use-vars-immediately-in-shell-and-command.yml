@@ -1,0 +1,12 @@
+---
+  - name: Test
+    hosts: local
+    tasks:
+      - name: Set & use var
+        vars:
+          test: 'test'
+        command: echo {{ test }}
+      - name: Set & use var
+        vars:
+          test2: 'test2'
+        shell: echo {{ test2 }}

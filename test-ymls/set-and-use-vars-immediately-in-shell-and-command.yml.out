@@ -1,0 +1,10 @@
+Starting deployment: Test
+
+Executing task: Set & use var
+> echo test
+test
+
+Executing task: Set & use var
+> echo test2
+test2
+

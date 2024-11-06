@@ -374,6 +374,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                 let task_chdir = task.chdir.as_deref().or(dep.chdir.as_deref()); // Use task-level chdir if present, otherwise use top-level chdir
 
+                if let Some(vars) = &task.vars {
+                    for (key, value) in vars {
+                        let evaluated_value = replace_placeholders_vars(&value, &register_map, &vars_map);
+                        vars_map.insert(key.clone(), evaluated_value);
+                    }
+                }
+
+                // Debug print to verify vars_map
+                // println!("Vars map: {:?}", vars_map);
+
                 if let Some(shell_command) = task.shell {
                     let commands = split_commands(&shell_command);
 
@@ -481,22 +491,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
 
-                if let Some(vars) = &task.vars {
-                    for (key, value) in vars {
-                        let evaluated_value =
-                            replace_placeholders_vars(&value, &register_map, &vars_map);
-                        vars_map.insert(key.clone(), evaluated_value);
-                    }
-                }
-
-                // Debug print to verify vars_map
-                // println!("Vars map: {:?}", vars_map);
-
-                // Use the debug field if present
                 if let Some(debug) = &task.debug {
-                    // Replace placeholders with registered values
                     let debug_msg = replace_placeholders(&debug.msg, &register_map, &vars_map);
-                    print!("{}", format!("Debug:\n{}", debug_msg).blue()); // Print debug message in blue
+                    print!("{}", format!("Debug:\n{}", debug_msg).blue());
                 }
 
                 println!(); // Add a new line after each task execution
