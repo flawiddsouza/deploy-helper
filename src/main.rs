@@ -127,7 +127,7 @@ fn execute_task(
     display_output: bool,
     chdir: Option<&str>,
 ) -> Result<(String, String, i32), Box<dyn std::error::Error>> {
-    session.set_blocking(true); // Set to blocking mode
+    session.set_blocking(true);
     let mut channel = session.channel_session()?;
 
     if let Some(dir) = chdir {
@@ -154,7 +154,6 @@ fn execute_task(
     let mut stderr_buffer = [0; 1024];
 
     loop {
-        // Read stdout
         match channel.read(&mut stdout_buffer) {
             Ok(read_bytes) => {
                 if read_bytes > 0 {
@@ -169,7 +168,6 @@ fn execute_task(
             Err(e) => return Err(e.into()),
         }
 
-        // Read stderr
         match channel.stderr().read(&mut stderr_buffer) {
             Ok(read_bytes) => {
                 if read_bytes > 0 {
@@ -184,7 +182,6 @@ fn execute_task(
             Err(e) => return Err(e.into()),
         }
 
-        // Check if the channel is closed
         if channel.eof() {
             break;
         }
@@ -267,7 +264,7 @@ fn replace_placeholders(
     vars: &HashMap<String, Value>,
 ) -> String {
     let mut env = Environment::new();
-    env.add_filter("from_json", from_json_filter); // Register the custom filter
+    env.add_filter("from_json", from_json_filter);
     let template = env.template_from_str(msg).unwrap();
     let mut context = HashMap::new();
 
@@ -342,10 +339,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let deployments = deployment_docs.into_iter().flatten().collect::<Vec<_>>();
 
     let mut register_map: HashMap<String, Register> = HashMap::new();
-    let mut vars_map: HashMap<String, Value> = HashMap::new(); // Add vars_map to store variables
+    let mut vars_map: HashMap<String, Value> = HashMap::new();
 
     for dep in deployments {
-        println!("{}", format!("Starting deployment: {}\n", dep.name).green()); // Print deployment name in green
+        println!("{}", format!("Starting deployment: {}\n", dep.name).green());
 
         if let Some(target_host) = server_config.hosts.get(&dep.hosts) {
             let is_localhost = target_host.host == "localhost";
@@ -370,7 +367,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             };
 
             for task in dep.tasks {
-                println!("{}", format!("Executing task: {}", task.name).cyan()); // Print task name in cyan
+                println!("{}", format!("Executing task: {}", task.name).cyan());
 
                 let task_chdir = task.chdir.as_deref().or(dep.chdir.as_deref()); // Use task-level chdir if present, otherwise use top-level chdir
 
@@ -410,7 +407,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     return Err(format!("Command execution failed with exit status: {}. Stopping further tasks.", exit_status).red().into());
                                 }
 
-                                // Store the output in the register map if register is present
                                 if let Some(register) = &task.register {
                                     register_map.insert(
                                         register.clone(),
@@ -423,7 +419,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     println!(
                                         "{}",
                                         format!("Registering output to: {}", register).yellow()
-                                    ); // Print register message in yellow
+                                    );
                                 }
                             }
                             Err(e) => {
@@ -496,13 +492,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     print!("{}", format!("Debug:\n{}", debug_msg).blue());
                 }
 
-                println!(); // Add a new line after each task execution
+                println!();
             }
         } else {
             eprintln!(
                 "{}",
                 format!("No server config found for host: {}", dep.hosts).red()
-            ); // Print error message in red
+            );
         }
     }
 
