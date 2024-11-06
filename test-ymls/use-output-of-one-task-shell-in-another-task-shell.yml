@@ -1,0 +1,14 @@
+---
+  - name: Test
+    hosts: local
+    tasks:
+      - name: Generate Output
+        shell: echo "hello"
+        register: output
+
+      - name: Debug Output
+        debug:
+          msg: "{{ output.stdout }}"
+
+      - name: Echo Output
+        shell: echo {{ output.stdout }}

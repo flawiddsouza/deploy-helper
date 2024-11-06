@@ -53,3 +53,8 @@ fn test_setting_global_working_directory_before_running_commands() {
 fn test_dont_run_2nd_deploy_if_1st_fails() {
     run_test("test-ymls/dont-run-2nd-task-or-2nd-deploy-if-1st-fails.yml", true);
 }
+
+#[test]
+fn test_use_output_of_one_task_shell_in_another_task_shell() {
+    run_test("test-ymls/use-output-of-one-task-shell-in-another-task-shell.yml", false);
+}

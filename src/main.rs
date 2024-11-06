@@ -237,8 +237,10 @@ fn execute_local_task(
             if display_output {
                 println!("{}", line.white());
             }
+            if !stdout_str.is_empty() {
+                stdout_str.push('\n');
+            }
             stdout_str.push_str(&line);
-            stdout_str.push('\n');
         }
     }
 
@@ -247,8 +249,10 @@ fn execute_local_task(
             if display_output {
                 eprintln!("{}", line.red());
             }
+            if !stderr_str.is_empty() {
+                stderr_str.push('\n');
+            }
             stderr_str.push_str(&line);
-            stderr_str.push('\n');
         }
     }
 
@@ -293,6 +297,37 @@ fn replace_placeholders_vars(
     } else {
         Value::String(rendered_str)
     }
+}
+
+fn split_commands(input: &str) -> Vec<String> {
+    let lines: Vec<&str> = input.lines().collect();
+    let mut commands = Vec::new();
+    let mut current_command = String::new();
+
+    for line in lines {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+
+        if trimmed.ends_with('\\') {
+            // Remove the trailing backslash and any whitespace before it
+            let clean_line = trimmed.trim_end_matches('\\').trim_end();
+            current_command.push_str(clean_line);
+            current_command.push(' '); // Add space between continued lines
+        } else {
+            current_command.push_str(trimmed);
+            commands.push(current_command.clone());
+            current_command.clear();
+        }
+    }
+
+    // Handle last command if it doesn't end with newline
+    if !current_command.is_empty() {
+        commands.push(current_command);
+    }
+
+    commands
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -340,21 +375,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let task_chdir = task.chdir.as_deref().or(dep.chdir.as_deref()); // Use task-level chdir if present, otherwise use top-level chdir
 
                 if let Some(shell_command) = task.shell {
-                    // Substitute Jinja variables in shell_command
-                    let substituted_shell_command =
-                        replace_placeholders(&shell_command, &register_map, &vars_map);
-                    let commands: Vec<&str> = substituted_shell_command.split('\n').collect();
+                    let commands = split_commands(&shell_command);
 
                     for cmd in commands {
-                        println!("{}", format!("> {}", cmd).magenta());
+                        let substituted_cmd = replace_placeholders(&cmd, &register_map, &vars_map);
+                        println!("{}", format!("> {}", substituted_cmd).magenta());
 
                         let display_output = task.register.is_none();
                         let result = if is_localhost {
-                            execute_local_task(cmd, true, display_output, task_chdir)
+                            execute_local_task(&substituted_cmd, true, display_output, task_chdir)
                         } else {
                             execute_task(
                                 session.as_ref().unwrap(),
-                                cmd,
+                                &substituted_cmd,
                                 true,
                                 display_output,
                                 task_chdir,
@@ -396,21 +429,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
 
                 if let Some(command) = task.command {
-                    // Substitute Jinja variables in command
-                    let substituted_command =
-                        replace_placeholders(&command, &register_map, &vars_map);
-                    let commands: Vec<&str> = substituted_command.split('\n').collect();
+                    let commands = split_commands(&command);
 
                     for cmd in commands {
-                        println!("{}", format!("> {}", cmd).magenta());
+                        let substituted_cmd = replace_placeholders(&cmd, &register_map, &vars_map);
+                        println!("{}", format!("> {}", substituted_cmd).magenta());
 
                         let display_output = task.register.is_none();
                         let result = if is_localhost {
-                            execute_local_task(cmd, false, display_output, task_chdir)
+                            execute_local_task(&substituted_cmd, false, display_output, task_chdir)
                         } else {
                             execute_task(
                                 session.as_ref().unwrap(),
-                                cmd,
+                                &substituted_cmd,
                                 false,
                                 display_output,
                                 task_chdir,

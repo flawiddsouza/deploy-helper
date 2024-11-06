@@ -1,0 +1,13 @@
+Starting deployment: Test
+
+Executing task: Generate Output
+> echo "hello"
+Registering output to: output
+
+Executing task: Debug Output
+Debug:
+hello
+Executing task: Echo Output
+> echo hello
+hello
+

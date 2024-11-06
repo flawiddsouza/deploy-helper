@@ -1,0 +1,9 @@
+  - name: Test
+    hosts: local
+    tasks:
+      - name: multi line command in shell
+        shell: |
+          echo "This is a very long sentence that we want to split into multiple lines for clarity. \
+          This is still part of the same sentence. \
+          And this is how it finally ends."
+          echo "This is another echo"
