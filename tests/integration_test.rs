@@ -68,3 +68,13 @@ fn set_and_use_vars_immediately_in_shell_and_command() {
 fn debug_should_come_before_command_and_shell() {
     run_test("test-ymls/debug-should-come-before-command-and-shell.yml", false);
 }
+
+#[test]
+fn nested_json_parsing_missing_property_error() {
+    run_test("test-ymls/nested-json-parsing-missing-property-error.yml", true);
+}
+
+#[test]
+fn missing_var_error() {
+    run_test("test-ymls/missing-var-error.yml", true);
+}

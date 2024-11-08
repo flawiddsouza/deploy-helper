@@ -1,20 +1,21 @@
 use colored::*;
-use minijinja::{value::Value as MiniJinjaValue, Environment};
+use indexmap::IndexMap;
+use minijinja::{value::Value as MiniJinjaValue, Environment, UndefinedBehavior};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use ssh2::Session;
-use std::collections::HashMap;
 use std::env;
 use std::fs;
 use std::io::prelude::*;
 use std::net::TcpStream;
 use std::path::Path;
+use std::process::exit;
 use std::process::Command;
 use std::process::Stdio;
 
 #[derive(Debug, Deserialize)]
 struct ServerConfig {
-    hosts: HashMap<String, TargetHost>,
+    hosts: IndexMap<String, TargetHost>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -42,12 +43,12 @@ struct Task {
     command: Option<String>,
     register: Option<String>,
     debug: Option<Debug>,
-    vars: Option<HashMap<String, String>>,
+    vars: Option<IndexMap<String, String>>,
     chdir: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
-struct Debug(HashMap<String, String>);
+struct Debug(IndexMap<String, String>);
 
 #[derive(Debug, Deserialize, Serialize)]
 struct Register {
@@ -258,13 +259,14 @@ fn execute_local_task(
 
 fn replace_placeholders(
     msg: &str,
-    register_map: &HashMap<String, Register>,
-    vars: &HashMap<String, Value>,
+    register_map: &IndexMap<String, Register>,
+    vars: &IndexMap<String, Value>,
 ) -> String {
     let mut env = Environment::new();
+    env.set_undefined_behavior(UndefinedBehavior::Strict);
     env.add_filter("from_json", from_json_filter);
     let template = env.template_from_str(msg).unwrap();
-    let mut context = HashMap::new();
+    let mut context = IndexMap::new();
 
     for (key, value) in register_map {
         context.insert(key.clone(), serde_json::to_value(value).unwrap());
@@ -277,13 +279,22 @@ fn replace_placeholders(
     // Debug print to verify context
     // println!("Context: {:?}", context);
 
-    template.render(&context).unwrap()
+    template.render(&context).unwrap_or_else(|err| {
+        if let minijinja::ErrorKind::UndefinedError = err.kind() {
+            eprintln!("One or more of the variables are undefined in:\n\"{}\"", msg);
+            eprintln!("Available vars: {:#?}", context);
+        } else {
+            eprintln!("Error rendering template: {}", err);
+        }
+
+        exit(1);
+    })
 }
 
 fn replace_placeholders_vars(
     msg: &str,
-    register_map: &HashMap<String, Register>,
-    vars: &HashMap<String, Value>,
+    register_map: &IndexMap<String, Register>,
+    vars: &IndexMap<String, Value>,
 ) -> Value {
     let rendered_str = replace_placeholders(msg, register_map, vars);
 
@@ -336,8 +347,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let deployment_docs: Vec<Vec<Deployment>> = read_yaml_multi(deploy_file)?;
     let deployments = deployment_docs.into_iter().flatten().collect::<Vec<_>>();
 
-    let mut register_map: HashMap<String, Register> = HashMap::new();
-    let mut vars_map: HashMap<String, Value> = HashMap::new();
+    let mut register_map: IndexMap<String, Register> = IndexMap::new();
+    let mut vars_map: IndexMap<String, Value> = IndexMap::new();
 
     for dep in deployments {
         println!("{}", format!("Starting deployment: {}\n", dep.name).green());
@@ -382,8 +393,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 if let Some(debug) = &task.debug {
                     println!("{}", "Debug:".blue());
                     for (key, msg) in debug.0.iter() {
+                        println!("{}", format!("{}:", key).blue());
                         let debug_msg = replace_placeholders(msg, &register_map, &vars_map);
-                        println!("{}", format!("{}:\n{}", key, debug_msg).blue());
+                        println!("{}", format!("{}", debug_msg).blue());
                     }
                 }
 

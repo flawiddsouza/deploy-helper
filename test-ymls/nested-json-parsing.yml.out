@@ -7,3 +7,8 @@ Debug:
 msg:
 AccessKeyId: abc, SecretAccessKey: def
 
+Executing task: Set and parse vars in one step
+Debug:
+msg:
+AccessKeyId: ghi, SecretAccessKey: jkl
+

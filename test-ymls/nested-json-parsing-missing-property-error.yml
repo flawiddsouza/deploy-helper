@@ -1,0 +1,16 @@
+---
+  - name: Test
+    hosts: local
+    tasks:
+      - name: Set, parse & print
+        vars:
+          credentials: '{
+            "Credentials": {
+              "AccessKeyId": "abc",
+              "SecretAccessKey": "def"
+            }
+          }'
+          parsed_credentials: "{{ credentials | from_json }}"
+        debug:
+          correct: "AccessKeyId: {{ parsed_credentials.Credentials.AccessKeyId }}, SecretAccessKey: {{ parsed_credentials.Credentials.SecretAccessKey }}"
+          incorrect: "AccessKeyId: {{ parsed_credentials.Credentials.AccessKeyId }}, SecretAccessKey: {{ parsed_credentials.Credentials.SecretAccessKey2 }}"

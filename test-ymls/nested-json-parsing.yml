@@ -16,3 +16,15 @@
           parsed_credentials: "{{ credentials | from_json }}"
         debug:
           msg: "AccessKeyId: {{ parsed_credentials.Credentials.AccessKeyId }}, SecretAccessKey: {{ parsed_credentials.Credentials.SecretAccessKey }}"
+
+      - name: Set and parse vars in one step
+        vars:
+          credentials2: '{
+            "Credentials": {
+              "AccessKeyId": "ghi",
+              "SecretAccessKey": "jkl"
+            }
+          }'
+          parsed_credentials2: "{{ credentials2 | from_json }}"
+        debug:
+          msg: "AccessKeyId: {{ parsed_credentials2.Credentials.AccessKeyId }}, SecretAccessKey: {{ parsed_credentials2.Credentials.SecretAccessKey }}"

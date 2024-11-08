@@ -1,0 +1,10 @@
+---
+  - name: Test
+    hosts: local
+    tasks:
+      - name: Set & print variable
+        vars:
+          my_var: test
+        debug:
+          msg: "{{ my_var }}"
+          msg2: "{{ my_var2 }}"
