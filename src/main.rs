@@ -47,9 +47,7 @@ struct Task {
 }
 
 #[derive(Debug, Deserialize)]
-struct Debug {
-    msg: String,
-}
+struct Debug(HashMap<String, String>);
 
 #[derive(Debug, Deserialize, Serialize)]
 struct Register {
@@ -382,8 +380,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // println!("Vars map: {:?}", vars_map);
 
                 if let Some(debug) = &task.debug {
-                    let debug_msg = replace_placeholders(&debug.msg, &register_map, &vars_map);
-                    print!("{}", format!("Debug:\n{}", debug_msg).blue());
+                    println!("{}", "Debug:".blue());
+                    for (key, msg) in debug.0.iter() {
+                        let debug_msg = replace_placeholders(msg, &register_map, &vars_map);
+                        println!("{}", format!("{}:\n{}", key, debug_msg).blue());
+                    }
                 }
 
                 if let Some(shell_command) = task.shell {

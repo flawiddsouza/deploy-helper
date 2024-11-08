@@ -4,7 +4,11 @@ Executing task: Set vars
 
 Executing task: Display the output of set vars
 Debug:
+msg:
 The property value is This is cat This is hey
+
 Executing task: Set vars & debug in the same task
 Debug:
+msg:
 The property value is This is cat2 This is hey2
+

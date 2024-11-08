@@ -6,7 +6,9 @@ Registering output to: output
 
 Executing task: Debug Output
 Debug:
+msg:
 hello
+
 Executing task: Echo Output
 > echo hello
 hello

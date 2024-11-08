@@ -4,4 +4,6 @@ Executing task: Set vars
 
 Executing task: Parse to json
 Debug:
+msg:
 AccessKeyId: abc, SecretAccessKey: def
+
