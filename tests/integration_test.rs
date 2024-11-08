@@ -78,3 +78,8 @@ fn nested_json_parsing_missing_property_error() {
 fn missing_var_error() {
     run_test("test-ymls/missing-var-error.yml", true);
 }
+
+#[test]
+fn invalid_json_error() {
+    run_test("test-ymls/invalid-json-error.yml", true);
+}

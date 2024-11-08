@@ -1,0 +1,11 @@
+  - name: Test
+    hosts: local
+    tasks:
+      - name: test debug
+        shell: |
+          echo '{ "key": "value }'
+        register: result
+
+      - name: parse json and fail
+        vars:
+          parsed: "{{ result.stdout | from_json }}"

@@ -1,0 +1,10 @@
+Starting deployment: Test
+
+Executing task: test debug
+> echo '{ "key": "value }'
+Registering output to: result
+
+Executing task: parse json and fail
+Error parsing JSON: EOF while parsing a string at line 1 column 17:
+{ "key": "value }
+at {{ result.stdout | from_json }}

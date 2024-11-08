@@ -57,15 +57,8 @@ struct Register {
     rc: i32,
 }
 
-// Custom from_json filter
-fn from_json_filter(value: MiniJinjaValue) -> Result<MiniJinjaValue, minijinja::Error> {
-    let json_str = value.as_str().ok_or_else(|| {
-        minijinja::Error::new(minijinja::ErrorKind::InvalidOperation, "Expected a string")
-    })?;
-    let json_value: Value = serde_json::from_str(json_str).map_err(|e| {
-        minijinja::Error::new(minijinja::ErrorKind::InvalidOperation, e.to_string())
-    })?;
-    Ok(MiniJinjaValue::from_serialize(&json_value))
+fn from_json_filter(value: MiniJinjaValue) -> MiniJinjaValue {
+    value
 }
 
 fn read_yaml<T>(filename: &str) -> Result<T, Box<dyn std::error::Error>>
@@ -281,10 +274,10 @@ fn replace_placeholders(
 
     template.render(&context).unwrap_or_else(|err| {
         if let minijinja::ErrorKind::UndefinedError = err.kind() {
-            eprintln!("One or more of the variables are undefined in:\n\"{}\"", msg);
-            eprintln!("Available vars: {:#?}", context);
+            eprintln!("{}", format!("One or more of the variables are undefined in:\n\"{}\"", msg).red());
+            eprintln!("{}", format!("Available vars: {:#?}", context).red());
         } else {
-            eprintln!("Error rendering template: {}", err);
+            eprintln!("{}", format!("Error rendering template: {}", err).red());
         }
 
         exit(1);
@@ -299,7 +292,10 @@ fn replace_placeholders_vars(
     let rendered_str = replace_placeholders(msg, register_map, vars);
 
     if msg.contains("from_json") {
-        serde_json::from_str(&rendered_str).unwrap()
+        serde_json::from_str(&rendered_str).unwrap_or_else(|err| {
+            eprintln!("{}", format!("Error parsing JSON: {}:\n{}\nat {}", err, rendered_str, msg).red());
+            exit(1);
+        })
     } else {
         Value::String(rendered_str)
     }
@@ -508,10 +504,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 println!();
             }
         } else {
-            eprintln!(
-                "{}",
-                format!("No server config found for host: {}", dep.hosts).red()
-            );
+            eprintln!("{}", format!("No server config found for host: {}", dep.hosts).red());
         }
     }
 
