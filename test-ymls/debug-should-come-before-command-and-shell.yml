@@ -1,0 +1,8 @@
+  - name: Test
+    hosts: local
+    tasks:
+      - name: test debug
+        debug:
+          msg: "Hello, world!"
+        command: echo "command"
+        shell: echo "shell"

@@ -381,6 +381,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // Debug print to verify vars_map
                 // println!("Vars map: {:?}", vars_map);
 
+                if let Some(debug) = &task.debug {
+                    let debug_msg = replace_placeholders(&debug.msg, &register_map, &vars_map);
+                    print!("{}", format!("Debug:\n{}", debug_msg).blue());
+                }
+
                 if let Some(shell_command) = task.shell {
                     let commands = split_commands(&shell_command);
 
@@ -485,11 +490,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             }
                         }
                     }
-                }
-
-                if let Some(debug) = &task.debug {
-                    let debug_msg = replace_placeholders(&debug.msg, &register_map, &vars_map);
-                    print!("{}", format!("Debug:\n{}", debug_msg).blue());
                 }
 
                 println!();

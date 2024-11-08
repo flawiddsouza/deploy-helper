@@ -1,0 +1,9 @@
+Starting deployment: Test
+
+Executing task: test debug
+Debug:
+Hello, world!> echo "shell"
+shell
+> echo "command"
+command
+

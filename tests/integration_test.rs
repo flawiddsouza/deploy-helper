@@ -63,3 +63,8 @@ fn use_output_of_one_task_shell_in_another_task_shell() {
 fn set_and_use_vars_immediately_in_shell_and_command() {
     run_test("test-ymls/set-and-use-vars-immediately-in-shell-and-command.yml", false);
 }
+
+#[test]
+fn debug_should_come_before_command_and_shell() {
+    run_test("test-ymls/debug-should-come-before-command-and-shell.yml", false);
+}
