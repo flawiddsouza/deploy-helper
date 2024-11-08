@@ -18,8 +18,8 @@ fn run_test(yml_file: &str, should_fail: bool) {
 
     let full_output = format!("{}{}", stdout, stderr);
 
-    let expected_output = fs::read_to_string(&format!("{}.out", yml_file))
-        .expect("Failed to read expected output");
+    let expected_output =
+        fs::read_to_string(&format!("{}.out", yml_file)).expect("Failed to read expected output");
 
     assert_eq!(full_output, expected_output);
 }
@@ -36,7 +36,10 @@ fn use_vars_in_command_and_shell() {
 
 #[test]
 fn setting_working_directory_before_running_commands() {
-    run_test("test-ymls/setting-working-directory-before-running-commands.yml", false);
+    run_test(
+        "test-ymls/setting-working-directory-before-running-commands.yml",
+        false,
+    );
 }
 
 #[test]
@@ -46,32 +49,50 @@ fn nested_json_parsing() {
 
 #[test]
 fn setting_global_working_directory_before_running_commands() {
-    run_test("test-ymls/setting-global-working-directory-before-running-commands.yml", false);
+    run_test(
+        "test-ymls/setting-global-working-directory-before-running-commands.yml",
+        false,
+    );
 }
 
 #[test]
 fn dont_run_2nd_deploy_if_1st_fails() {
-    run_test("test-ymls/dont-run-2nd-task-or-2nd-deploy-if-1st-fails.yml", true);
+    run_test(
+        "test-ymls/dont-run-2nd-task-or-2nd-deploy-if-1st-fails.yml",
+        true,
+    );
 }
 
 #[test]
 fn use_output_of_one_task_shell_in_another_task_shell() {
-    run_test("test-ymls/use-output-of-one-task-shell-in-another-task-shell.yml", false);
+    run_test(
+        "test-ymls/use-output-of-one-task-shell-in-another-task-shell.yml",
+        false,
+    );
 }
 
 #[test]
 fn set_and_use_vars_immediately_in_shell_and_command() {
-    run_test("test-ymls/set-and-use-vars-immediately-in-shell-and-command.yml", false);
+    run_test(
+        "test-ymls/set-and-use-vars-immediately-in-shell-and-command.yml",
+        false,
+    );
 }
 
 #[test]
 fn debug_should_come_before_command_and_shell() {
-    run_test("test-ymls/debug-should-come-before-command-and-shell.yml", false);
+    run_test(
+        "test-ymls/debug-should-come-before-command-and-shell.yml",
+        false,
+    );
 }
 
 #[test]
 fn nested_json_parsing_missing_property_error() {
-    run_test("test-ymls/nested-json-parsing-missing-property-error.yml", true);
+    run_test(
+        "test-ymls/nested-json-parsing-missing-property-error.yml",
+        true,
+    );
 }
 
 #[test]

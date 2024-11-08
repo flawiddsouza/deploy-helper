@@ -196,8 +196,8 @@ fn execute_local_task(
         shell_cmd.arg("-c").arg(command);
         shell_cmd
     } else {
-        let parts = shell_words::split(command)
-            .map_err(|e| format!("Failed to parse command: {}", e))?;
+        let parts =
+            shell_words::split(command).map_err(|e| format!("Failed to parse command: {}", e))?;
         let mut cmd = Command::new(&parts[0]);
         if parts.len() > 1 {
             cmd.args(&parts[1..]);
@@ -274,7 +274,14 @@ fn replace_placeholders(
 
     template.render(&context).unwrap_or_else(|err| {
         if let minijinja::ErrorKind::UndefinedError = err.kind() {
-            eprintln!("{}", format!("One or more of the variables are undefined in:\n\"{}\"", msg).red());
+            eprintln!(
+                "{}",
+                format!(
+                    "One or more of the variables are undefined in:\n\"{}\"",
+                    msg
+                )
+                .red()
+            );
             eprintln!("{}", format!("Available vars: {:#?}", context).red());
         } else {
             eprintln!("{}", format!("Error rendering template: {}", err).red());
@@ -293,7 +300,10 @@ fn replace_placeholders_vars(
 
     if msg.contains("from_json") {
         serde_json::from_str(&rendered_str).unwrap_or_else(|err| {
-            eprintln!("{}", format!("Error parsing JSON: {}:\n{}\nat {}", err, rendered_str, msg).red());
+            eprintln!(
+                "{}",
+                format!("Error parsing JSON: {}:\n{}\nat {}", err, rendered_str, msg).red()
+            );
             exit(1);
         })
     } else {
@@ -378,7 +388,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                 if let Some(vars) = &task.vars {
                     for (key, value) in vars {
-                        let evaluated_value = replace_placeholders_vars(&value, &register_map, &vars_map);
+                        let evaluated_value =
+                            replace_placeholders_vars(&value, &register_map, &vars_map);
                         vars_map.insert(key.clone(), evaluated_value);
                     }
                 }
@@ -504,7 +515,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 println!();
             }
         } else {
-            eprintln!("{}", format!("No server config found for host: {}", dep.hosts).red());
+            eprintln!(
+                "{}",
+                format!("No server config found for host: {}", dep.hosts).red()
+            );
         }
     }
 
