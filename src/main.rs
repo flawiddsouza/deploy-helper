@@ -1,3 +1,4 @@
+use clap::{Arg, Command as ClapCommand};
 use colored::*;
 use indexmap::IndexMap;
 use minijinja::{value::Value as MiniJinjaValue, Environment, UndefinedBehavior};
@@ -5,7 +6,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use simple_expand_tilde::expand_tilde;
 use ssh2::Session;
-use std::env;
 use std::fs;
 use std::io::prelude::*;
 use std::net::TcpStream;
@@ -429,11 +429,27 @@ fn process_commands(
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let args: Vec<String> = env::args().collect();
-    if args.len() < 2 {
-        return Err("Usage: deploy-helper <deploy.yml>".into());
-    }
-    let deploy_file = &args[1];
+    let matches = ClapCommand::new("deploy-helper")
+        .version("1.0.3")
+        .about("Deployment helper tool")
+        .arg(
+            Arg::new("deploy_file")
+                .help("The deployment YAML file")
+                .required(true)
+                .index(1),
+        )
+        .arg(
+            Arg::new("extra_vars")
+                .short('e')
+                .long("extra-vars")
+                .value_name("VARS")
+                .help("Set additional variables as key=value or JSON")
+                .num_args(1),
+        )
+        .get_matches();
+
+    let deploy_file = matches.get_one::<String>("deploy_file").unwrap();
+    let extra_vars = matches.get_one::<String>("extra_vars").map(|s| s.as_str());
 
     let server_config: ServerConfig = read_yaml("servers.yml")?;
     let deployment_docs: Vec<Vec<Deployment>> = read_yaml_multi(deploy_file)?;
@@ -441,6 +457,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut register_map: IndexMap<String, Register> = IndexMap::new();
     let mut vars_map: IndexMap<String, Value> = IndexMap::new();
+
+    if let Some(extra_vars) = extra_vars {
+        if extra_vars.starts_with('{') {
+            let json_vars: IndexMap<String, Value> = serde_json::from_str(extra_vars)?;
+            vars_map.extend(json_vars);
+        } else {
+            for var in extra_vars.split(' ') {
+                let parts: Vec<&str> = var.splitn(2, '=').collect();
+                if parts.len() == 2 {
+                    vars_map.insert(parts[0].to_string(), Value::String(parts[1].to_string()));
+                }
+            }
+        }
+    }
 
     for dep in deployments {
         println!("{}", format!("Starting deployment: {}\n", dep.name).green());

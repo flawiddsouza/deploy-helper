@@ -1,9 +1,9 @@
 use std::fs;
 use std::process::Command;
 
-fn run_test(yml_file: &str, should_fail: bool) {
+fn run_test(yml_file: &str, should_fail: bool, extra_vars: &str) {
     let output = Command::new("cargo")
-        .args(&["run", "--quiet", yml_file])
+        .args(&["run", "--quiet", "--", yml_file, "--extra-vars", extra_vars])
         .output()
         .expect("Failed to execute command");
 
@@ -26,12 +26,12 @@ fn run_test(yml_file: &str, should_fail: bool) {
 
 #[test]
 fn setting_and_debugging_vars() {
-    run_test("test-ymls/setting-and-debugging-vars.yml", false);
+    run_test("test-ymls/setting-and-debugging-vars.yml", false, "");
 }
 
 #[test]
 fn use_vars_in_command_and_shell() {
-    run_test("test-ymls/use-vars-in-command-and-shell.yml", false);
+    run_test("test-ymls/use-vars-in-command-and-shell.yml", false, "");
 }
 
 #[test]
@@ -39,12 +39,13 @@ fn setting_working_directory_before_running_commands() {
     run_test(
         "test-ymls/setting-working-directory-before-running-commands.yml",
         false,
+        "",
     );
 }
 
 #[test]
 fn nested_json_parsing() {
-    run_test("test-ymls/nested-json-parsing.yml", false);
+    run_test("test-ymls/nested-json-parsing.yml", false, "");
 }
 
 #[test]
@@ -52,6 +53,7 @@ fn setting_global_working_directory_before_running_commands() {
     run_test(
         "test-ymls/setting-global-working-directory-before-running-commands.yml",
         false,
+        "",
     );
 }
 
@@ -60,6 +62,7 @@ fn dont_run_2nd_deploy_if_1st_fails() {
     run_test(
         "test-ymls/dont-run-2nd-task-or-2nd-deploy-if-1st-fails.yml",
         true,
+        "",
     );
 }
 
@@ -68,6 +71,7 @@ fn use_output_of_one_task_shell_in_another_task_shell() {
     run_test(
         "test-ymls/use-output-of-one-task-shell-in-another-task-shell.yml",
         false,
+        "",
     );
 }
 
@@ -76,6 +80,7 @@ fn set_and_use_vars_immediately_in_shell_and_command() {
     run_test(
         "test-ymls/set-and-use-vars-immediately-in-shell-and-command.yml",
         false,
+        "",
     );
 }
 
@@ -84,6 +89,7 @@ fn debug_should_come_before_command_and_shell() {
     run_test(
         "test-ymls/debug-should-come-before-command-and-shell.yml",
         false,
+        "",
     );
 }
 
@@ -92,15 +98,22 @@ fn nested_json_parsing_missing_property_error() {
     run_test(
         "test-ymls/nested-json-parsing-missing-property-error.yml",
         true,
+        "",
     );
 }
 
 #[test]
 fn missing_var_error() {
-    run_test("test-ymls/missing-var-error.yml", true);
+    run_test("test-ymls/missing-var-error.yml", true, "");
 }
 
 #[test]
 fn invalid_json_error() {
-    run_test("test-ymls/invalid-json-error.yml", true);
+    run_test("test-ymls/invalid-json-error.yml", true, "");
+}
+
+#[test]
+fn extra_vars() {
+    run_test("test-ymls/extra-vars.yml", false, "cat=1 bat=2");
+    run_test("test-ymls/extra-vars.yml", false, "{ \"cat\": 1, \"bat\": 2 }");
 }

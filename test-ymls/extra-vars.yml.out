@@ -1,0 +1,9 @@
+Starting deployment: Test
+
+Executing task: print extra vars cat & bat
+Debug:
+cat:
+1
+bat:
+2
+

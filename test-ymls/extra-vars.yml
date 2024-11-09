@@ -1,0 +1,8 @@
+- name: Test
+  hosts: local
+  tasks:
+    - name: print extra vars cat & bat
+      debug:
+        cat: "{{ cat }}"
+        bat: "{{ bat }}"
+
