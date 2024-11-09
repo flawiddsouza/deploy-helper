@@ -342,6 +342,91 @@ fn split_commands(input: &str) -> Vec<String> {
     commands
 }
 
+fn handle_command_execution(
+    is_localhost: bool,
+    session: Option<&Session>,
+    command: &str,
+    use_shell: bool,
+    display_output: bool,
+    chdir: Option<&str>,
+    register: Option<&String>,
+    register_map: &mut IndexMap<String, Register>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let result = if is_localhost {
+        execute_local_task(command, use_shell, display_output, chdir)
+    } else {
+        execute_task(session.unwrap(), command, use_shell, display_output, chdir)
+    };
+
+    match result {
+        Ok((stdout, stderr, exit_status)) => {
+            if exit_status != 0 {
+                return Err(format!(
+                    "Command execution failed with exit status: {}. Stopping further tasks.",
+                    exit_status
+                )
+                .red()
+                .into());
+            }
+
+            if let Some(register) = register {
+                register_map.insert(
+                    register.clone(),
+                    Register {
+                        stdout: stdout.clone(),
+                        stderr: stderr.clone(),
+                        rc: exit_status,
+                    },
+                );
+                println!(
+                    "{}",
+                    format!("Registering output to: {}", register).yellow()
+                );
+            }
+        }
+        Err(e) => {
+            return Err(format!(
+                "Command execution failed with error: {}. Stopping further tasks.",
+                e
+            )
+            .red()
+            .into());
+        }
+    }
+
+    Ok(())
+}
+
+fn process_commands(
+    commands: Vec<String>,
+    is_localhost: bool,
+    session: Option<&Session>,
+    use_shell: bool,
+    task_chdir: Option<&str>,
+    register: Option<&String>,
+    register_map: &mut IndexMap<String, Register>,
+    vars_map: &IndexMap<String, Value>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    for cmd in commands {
+        let substituted_cmd = replace_placeholders(&cmd, register_map, vars_map);
+        println!("{}", format!("> {}", substituted_cmd).magenta());
+
+        let display_output = register.is_none();
+        handle_command_execution(
+            is_localhost,
+            session,
+            &substituted_cmd,
+            use_shell,
+            display_output,
+            task_chdir,
+            register,
+            register_map,
+        )?;
+    }
+
+    Ok(())
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = env::args().collect();
     if args.len() < 2 {
@@ -408,108 +493,30 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                 if let Some(shell_command) = task.shell {
                     let commands = split_commands(&shell_command);
-
-                    for cmd in commands {
-                        let substituted_cmd = replace_placeholders(&cmd, &register_map, &vars_map);
-                        println!("{}", format!("> {}", substituted_cmd).magenta());
-
-                        let display_output = task.register.is_none();
-                        let result = if is_localhost {
-                            execute_local_task(&substituted_cmd, true, display_output, task_chdir)
-                        } else {
-                            execute_task(
-                                session.as_ref().unwrap(),
-                                &substituted_cmd,
-                                true,
-                                display_output,
-                                task_chdir,
-                            )
-                        };
-
-                        match result {
-                            Ok((stdout, stderr, exit_status)) => {
-                                if exit_status != 0 {
-                                    return Err(format!("Command execution failed with exit status: {}. Stopping further tasks.", exit_status).red().into());
-                                }
-
-                                if let Some(register) = &task.register {
-                                    register_map.insert(
-                                        register.clone(),
-                                        Register {
-                                            stdout: stdout.clone(),
-                                            stderr: stderr.clone(),
-                                            rc: exit_status,
-                                        },
-                                    );
-                                    println!(
-                                        "{}",
-                                        format!("Registering output to: {}", register).yellow()
-                                    );
-                                }
-                            }
-                            Err(e) => {
-                                return Err(format!(
-                                    "Command execution failed with error: {}. Stopping further tasks.",
-                                    e
-                                )
-                                .red()
-                                .into());
-                            }
-                        }
-                    }
+                    process_commands(
+                        commands,
+                        is_localhost,
+                        session.as_ref(),
+                        true,
+                        task_chdir,
+                        task.register.as_ref(),
+                        &mut register_map,
+                        &vars_map,
+                    )?;
                 }
 
                 if let Some(command) = task.command {
                     let commands = split_commands(&command);
-
-                    for cmd in commands {
-                        let substituted_cmd = replace_placeholders(&cmd, &register_map, &vars_map);
-                        println!("{}", format!("> {}", substituted_cmd).magenta());
-
-                        let display_output = task.register.is_none();
-                        let result = if is_localhost {
-                            execute_local_task(&substituted_cmd, false, display_output, task_chdir)
-                        } else {
-                            execute_task(
-                                session.as_ref().unwrap(),
-                                &substituted_cmd,
-                                false,
-                                display_output,
-                                task_chdir,
-                            )
-                        };
-
-                        match result {
-                            Ok((stdout, stderr, exit_status)) => {
-                                if exit_status != 0 {
-                                    return Err(format!("Command execution failed with exit status: {}. Stopping further tasks.", exit_status).red().into());
-                                }
-
-                                if let Some(register) = &task.register {
-                                    register_map.insert(
-                                        register.clone(),
-                                        Register {
-                                            stdout: stdout.clone(),
-                                            stderr: stderr.clone(),
-                                            rc: exit_status,
-                                        },
-                                    );
-                                    println!(
-                                        "{}",
-                                        format!("Registering output to: {}", register).yellow()
-                                    );
-                                }
-                            }
-                            Err(e) => {
-                                return Err(format!(
-                                    "Command execution failed with error: {}. Stopping further tasks.",
-                                    e
-                                )
-                                .red()
-                                .into());
-                            }
-                        }
-                    }
+                    process_commands(
+                        commands,
+                        is_localhost,
+                        session.as_ref(),
+                        false,
+                        task_chdir,
+                        task.register.as_ref(),
+                        &mut register_map,
+                        &vars_map,
+                    )?;
                 }
 
                 println!();
