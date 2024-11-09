@@ -14,7 +14,20 @@ impl Drop for DockerGuard {
 
 fn start_docker_container() {
     let start_output = Command::new("docker")
-        .args(&["run", "-d", "--rm", "-p", "2222:2222", "--name", "ssh_test_server", "-e", "USER_NAME=root", "-e", "USER_PASSWD=password", "forumi0721/alpine-sshd:x64"])
+        .args(&[
+            "run",
+            "-d",
+            "--rm",
+            "-p",
+            "2222:2222",
+            "--name",
+            "ssh_test_server",
+            "-e",
+            "USER_NAME=root",
+            "-e",
+            "USER_PASSWD=password",
+            "forumi0721/alpine-sshd:x64",
+        ])
         .output()
         .expect("Failed to start Docker container");
 
@@ -29,7 +42,16 @@ fn stop_docker_container() {
 
 fn run_test(yml_file: &str, should_fail: bool, extra_vars: &str, inventory_file: &str) {
     let output = Command::new("cargo")
-        .args(&["run", "--quiet", "--", yml_file, "--extra-vars", extra_vars, "--inventory", inventory_file])
+        .args(&[
+            "run",
+            "--quiet",
+            "--",
+            yml_file,
+            "--extra-vars",
+            extra_vars,
+            "--inventory",
+            inventory_file,
+        ])
         .output()
         .expect("Failed to execute command");
 
@@ -59,7 +81,12 @@ fn setup() -> DockerGuard {
 
 fn run_tests_for_both_inventories(yml_file: &str, should_fail: bool, extra_vars: &str) {
     run_test(yml_file, should_fail, extra_vars, "tests/servers/local.yml");
-    run_test(yml_file, should_fail, extra_vars, "tests/servers/remote.yml");
+    run_test(
+        yml_file,
+        should_fail,
+        extra_vars,
+        "tests/servers/remote.yml",
+    );
 }
 
 #[test]
@@ -166,8 +193,16 @@ fn invalid_json_error() {
 fn extra_vars() {
     setup();
     run_tests_for_both_inventories("test-ymls/extra-vars.yml", false, "cat=1 bat=2");
-    run_tests_for_both_inventories("test-ymls/extra-vars.yml", false, "{ \"cat\": 1, \"bat\": 2 }");
-    run_tests_for_both_inventories("test-ymls/extra-vars.yml", false, "@test-ymls/extra-vars.vars.yml");
+    run_tests_for_both_inventories(
+        "test-ymls/extra-vars.yml",
+        false,
+        "{ \"cat\": 1, \"bat\": 2 }",
+    );
+    run_tests_for_both_inventories(
+        "test-ymls/extra-vars.yml",
+        false,
+        "@test-ymls/extra-vars.vars.yml",
+    );
 }
 
 #[test]

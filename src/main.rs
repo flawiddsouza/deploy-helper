@@ -479,7 +479,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let deploy_file = matches.get_one::<String>("deploy_file").unwrap();
     let extra_vars = matches.get_one::<String>("extra_vars").map(|s| s.as_str());
     let default_server_file = "servers.yml".to_string();
-    let server_file = matches.get_one::<String>("server_file").unwrap_or(&default_server_file);
+    let server_file = matches
+        .get_one::<String>("server_file")
+        .unwrap_or(&default_server_file);
 
     let server_config: ServerConfig = read_yaml(server_file)?;
     let deployment_docs: Vec<Vec<Deployment>> = read_yaml_multi(deploy_file)?;
