@@ -445,88 +445,98 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     for dep in deployments {
         println!("{}", format!("Starting deployment: {}\n", dep.name).green());
 
-        if let Some(target_host) = server_config.hosts.get(&dep.hosts) {
-            let is_localhost = target_host.host == "localhost";
-            let session = if !is_localhost {
-                let port = target_host.port.ok_or("Missing port for remote host")?;
-                let user = target_host
-                    .user
-                    .as_deref()
-                    .ok_or("Missing user for remote host")?;
-                let password = target_host.password.as_deref();
-                let ssh_key_path = target_host.ssh_key_path.as_deref();
+        let hosts: Vec<&str> = dep.hosts.split(',').map(|s| s.trim()).collect();
 
-                Some(setup_ssh_session(
-                    &target_host.host,
-                    port,
-                    user,
-                    password,
-                    ssh_key_path,
-                )?)
-            } else {
-                None
-            };
+        let hosts_len = hosts.len();
 
-            for task in dep.tasks {
-                println!("{}", format!("Executing task: {}", task.name).cyan());
-
-                let task_chdir = task.chdir.as_deref().or(dep.chdir.as_deref()); // Use task-level chdir if present, otherwise use top-level chdir
-
-                if let Some(vars) = &task.vars {
-                    for (key, value) in vars {
-                        let evaluated_value =
-                            replace_placeholders_vars(&value, &register_map, &vars_map);
-                        vars_map.insert(key.clone(), evaluated_value);
-                    }
-                }
-
-                // Debug print to verify vars_map
-                // println!("Vars map: {:?}", vars_map);
-
-                if let Some(debug) = &task.debug {
-                    println!("{}", "Debug:".blue());
-                    for (key, msg) in debug.0.iter() {
-                        println!("{}", format!("{}:", key).blue());
-                        let debug_msg = replace_placeholders(msg, &register_map, &vars_map);
-                        println!("{}", format!("{}", debug_msg).blue());
-                    }
-                }
-
-                if let Some(shell_command) = task.shell {
-                    let commands = split_commands(&shell_command);
-                    process_commands(
-                        commands,
-                        is_localhost,
-                        session.as_ref(),
-                        true,
-                        task_chdir,
-                        task.register.as_ref(),
-                        &mut register_map,
-                        &vars_map,
-                    )?;
-                }
-
-                if let Some(command) = task.command {
-                    let commands = split_commands(&command);
-                    process_commands(
-                        commands,
-                        is_localhost,
-                        session.as_ref(),
-                        false,
-                        task_chdir,
-                        task.register.as_ref(),
-                        &mut register_map,
-                        &vars_map,
-                    )?;
-                }
-
-                println!();
+        for host in hosts {
+            if hosts_len > 1 {
+                println!("{}", format!("Processing host: {}\n", host).blue());
             }
-        } else {
-            eprintln!(
-                "{}",
-                format!("No server config found for host: {}", dep.hosts).red()
-            );
+
+            if let Some(target_host) = server_config.hosts.get(host) {
+                let is_localhost = target_host.host == "localhost";
+                let session = if !is_localhost {
+                    let port = target_host.port.ok_or("Missing port for remote host")?;
+                    let user = target_host
+                        .user
+                        .as_deref()
+                        .ok_or("Missing user for remote host")?;
+                    let password = target_host.password.as_deref();
+                    let ssh_key_path = target_host.ssh_key_path.as_deref();
+
+                    Some(setup_ssh_session(
+                        &target_host.host,
+                        port,
+                        user,
+                        password,
+                        ssh_key_path,
+                    )?)
+                } else {
+                    None
+                };
+
+                for task in &dep.tasks {
+                    println!("{}", format!("Executing task: {}", task.name).cyan());
+
+                    let task_chdir = task.chdir.as_deref().or(dep.chdir.as_deref()); // Use task-level chdir if present, otherwise use top-level chdir
+
+                    if let Some(vars) = &task.vars {
+                        for (key, value) in vars {
+                            let evaluated_value =
+                                replace_placeholders_vars(&value, &register_map, &vars_map);
+                            vars_map.insert(key.clone(), evaluated_value);
+                        }
+                    }
+
+                    // Debug print to verify vars_map
+                    // println!("Vars map: {:?}", vars_map);
+
+                    if let Some(debug) = &task.debug {
+                        println!("{}", "Debug:".blue());
+                        for (key, msg) in debug.0.iter() {
+                            println!("{}", format!("{}:", key).blue());
+                            let debug_msg = replace_placeholders(msg, &register_map, &vars_map);
+                            println!("{}", format!("{}", debug_msg).blue());
+                        }
+                    }
+
+                    if let Some(shell_command) = &task.shell {
+                        let commands = split_commands(shell_command);
+                        process_commands(
+                            commands,
+                            is_localhost,
+                            session.as_ref(),
+                            true,
+                            task_chdir,
+                            task.register.as_ref(),
+                            &mut register_map,
+                            &vars_map,
+                        )?;
+                    }
+
+                    if let Some(command) = &task.command {
+                        let commands = split_commands(command);
+                        process_commands(
+                            commands,
+                            is_localhost,
+                            session.as_ref(),
+                            false,
+                            task_chdir,
+                            task.register.as_ref(),
+                            &mut register_map,
+                            &vars_map,
+                        )?;
+                    }
+
+                    println!();
+                }
+            } else {
+                eprintln!(
+                    "{}",
+                    format!("No server config found for host: {}", host).red()
+                );
+            }
         }
     }
 

@@ -1,0 +1,28 @@
+- name: Connect to a remote host & a local host sequentially and run commands
+  hosts: my_host, local
+  tasks:
+    - name: List directory contents with ls
+      shell: ls
+      register: ls_output
+
+    - name: Display the output of ls
+      debug:
+        msg: "{{ ls_output.stdout }}"
+
+    - name: Check disk space usage with df
+      shell: df -h
+      register: df_output
+
+    - name: Display the output of df
+      debug:
+        msg: "{{ df_output.stdout }}"
+
+    - name: Get JSON data from command
+      command: "curl -s https://jsonplaceholder.typicode.com/todos/1"
+      register: json_output
+
+    - name: Parse JSON and access properties
+      vars:
+        parsed_json: "{{ json_output.stdout | from_json }}"
+      debug:
+        msg: "The property value is {{ parsed_json['title'] }}"
