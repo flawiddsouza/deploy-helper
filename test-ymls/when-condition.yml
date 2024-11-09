@@ -1,0 +1,13 @@
+- name: Test when condition
+  hosts: local
+  tasks:
+    - name: should run when condition is true
+      shell: echo "Condition is true"
+      when: condition == "true"
+
+    - name: should not run when condition is false
+      shell: echo "Condition is false"
+      when: condition == "false"
+
+    - name: always run
+      shell: echo "Always run"

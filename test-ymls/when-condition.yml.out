@@ -1,0 +1,12 @@
+Starting deployment: Test when condition
+
+Executing task: should run when condition is true
+> echo "Condition is true"
+Condition is true
+
+Skipping task: should not run when condition is false
+
+Executing task: always run
+> echo "Always run"
+Always run
+

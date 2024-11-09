@@ -46,6 +46,7 @@ struct Task {
     debug: Option<Debug>,
     vars: Option<IndexMap<String, String>>,
     chdir: Option<String>,
+    when: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -429,6 +430,24 @@ fn process_commands(
     Ok(())
 }
 
+fn should_run_task(
+    condition: &Option<String>,
+    register_map: &IndexMap<String, Register>,
+    vars_map: &IndexMap<String, Value>,
+) -> bool {
+    if let Some(cond) = condition {
+        let template_str = format!("{{% if {} %}}true{{% else %}}false{{% endif %}}", cond);
+        let rendered_cond = replace_placeholders(&template_str, register_map, vars_map);
+        if rendered_cond == "false" {
+            false
+        } else {
+            true
+        }
+    } else {
+        true
+    }
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let matches = ClapCommand::new("deploy-helper")
         .version("1.0.3")
@@ -521,6 +540,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 };
 
                 for task in &dep.tasks {
+                    if !should_run_task(&task.when, &register_map, &vars_map) {
+                        println!("{}", format!("Skipping task: {}\n", task.name).yellow());
+                        continue;
+                    }
+
                     println!("{}", format!("Executing task: {}", task.name).cyan());
 
                     let task_chdir = task.chdir.as_deref().or(dep.chdir.as_deref()); // Use task-level chdir if present, otherwise use top-level chdir

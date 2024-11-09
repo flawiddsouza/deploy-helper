@@ -126,3 +126,8 @@ fn extra_vars() {
         "@test-ymls/extra-vars.vars.yml",
     );
 }
+
+#[test]
+fn when_condition() {
+    run_test("test-ymls/when-condition.yml", false, "condition=true");
+}
