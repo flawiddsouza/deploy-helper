@@ -1,5 +1,5 @@
 - name: Test
-  hosts: local
+  hosts: test
   tasks:
     - name: print extra vars cat & bat
       debug:

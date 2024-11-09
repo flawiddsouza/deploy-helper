@@ -1,0 +1,6 @@
+hosts:
+  test:
+    host: localhost
+    port: 2222
+    user: root
+    password: password

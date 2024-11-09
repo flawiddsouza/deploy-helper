@@ -1,6 +1,6 @@
 ---
   - name: Test
-    hosts: local
+    hosts: test
     chdir: tests/mocks/ls-dir
     tasks:
       - name: Global working directory

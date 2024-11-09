@@ -1,6 +1,6 @@
 ---
   - name: Test
-    hosts: local
+    hosts: test
     tasks:
       - name: Set & print variable
         vars:

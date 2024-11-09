@@ -1,5 +1,5 @@
 - name: Test when condition
-  hosts: local
+  hosts: test
   tasks:
     - name: should run when condition is true
       shell: echo "Condition is true"

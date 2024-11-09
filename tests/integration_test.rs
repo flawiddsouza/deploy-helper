@@ -27,9 +27,9 @@ fn stop_docker_container() {
         .output();
 }
 
-fn run_test(yml_file: &str, should_fail: bool, extra_vars: &str) {
+fn run_test(yml_file: &str, should_fail: bool, extra_vars: &str, inventory_file: &str) {
     let output = Command::new("cargo")
-        .args(&["run", "--quiet", "--", yml_file, "--extra-vars", extra_vars])
+        .args(&["run", "--quiet", "--", yml_file, "--extra-vars", extra_vars, "--inventory", inventory_file])
         .output()
         .expect("Failed to execute command");
 
@@ -57,22 +57,27 @@ fn setup() -> DockerGuard {
     DockerGuard
 }
 
+fn run_tests_for_both_inventories(yml_file: &str, should_fail: bool, extra_vars: &str) {
+    run_test(yml_file, should_fail, extra_vars, "tests/servers/local.yml");
+    run_test(yml_file, should_fail, extra_vars, "tests/servers/remote.yml");
+}
+
 #[test]
 fn setting_and_debugging_vars() {
     setup();
-    run_test("test-ymls/setting-and-debugging-vars.yml", false, "");
+    run_tests_for_both_inventories("test-ymls/setting-and-debugging-vars.yml", false, "");
 }
 
 #[test]
 fn use_vars_in_command_and_shell() {
     setup();
-    run_test("test-ymls/use-vars-in-command-and-shell.yml", false, "");
+    run_tests_for_both_inventories("test-ymls/use-vars-in-command-and-shell.yml", false, "");
 }
 
 #[test]
 fn setting_working_directory_before_running_commands() {
     setup();
-    run_test(
+    run_tests_for_both_inventories(
         "test-ymls/setting-working-directory-before-running-commands.yml",
         false,
         "",
@@ -82,13 +87,13 @@ fn setting_working_directory_before_running_commands() {
 #[test]
 fn nested_json_parsing() {
     setup();
-    run_test("test-ymls/nested-json-parsing.yml", false, "");
+    run_tests_for_both_inventories("test-ymls/nested-json-parsing.yml", false, "");
 }
 
 #[test]
 fn setting_global_working_directory_before_running_commands() {
     setup();
-    run_test(
+    run_tests_for_both_inventories(
         "test-ymls/setting-global-working-directory-before-running-commands.yml",
         false,
         "",
@@ -98,7 +103,7 @@ fn setting_global_working_directory_before_running_commands() {
 #[test]
 fn dont_run_2nd_deploy_if_1st_fails() {
     setup();
-    run_test(
+    run_tests_for_both_inventories(
         "test-ymls/dont-run-2nd-task-or-2nd-deploy-if-1st-fails.yml",
         true,
         "",
@@ -108,7 +113,7 @@ fn dont_run_2nd_deploy_if_1st_fails() {
 #[test]
 fn use_output_of_one_task_shell_in_another_task_shell() {
     setup();
-    run_test(
+    run_tests_for_both_inventories(
         "test-ymls/use-output-of-one-task-shell-in-another-task-shell.yml",
         false,
         "",
@@ -118,7 +123,7 @@ fn use_output_of_one_task_shell_in_another_task_shell() {
 #[test]
 fn set_and_use_vars_immediately_in_shell_and_command() {
     setup();
-    run_test(
+    run_tests_for_both_inventories(
         "test-ymls/set-and-use-vars-immediately-in-shell-and-command.yml",
         false,
         "",
@@ -128,7 +133,7 @@ fn set_and_use_vars_immediately_in_shell_and_command() {
 #[test]
 fn debug_should_come_before_command_and_shell() {
     setup();
-    run_test(
+    run_tests_for_both_inventories(
         "test-ymls/debug-should-come-before-command-and-shell.yml",
         false,
         "",
@@ -138,7 +143,7 @@ fn debug_should_come_before_command_and_shell() {
 #[test]
 fn nested_json_parsing_missing_property_error() {
     setup();
-    run_test(
+    run_tests_for_both_inventories(
         "test-ymls/nested-json-parsing-missing-property-error.yml",
         true,
         "",
@@ -148,33 +153,25 @@ fn nested_json_parsing_missing_property_error() {
 #[test]
 fn missing_var_error() {
     setup();
-    run_test("test-ymls/missing-var-error.yml", true, "");
+    run_tests_for_both_inventories("test-ymls/missing-var-error.yml", true, "");
 }
 
 #[test]
 fn invalid_json_error() {
     setup();
-    run_test("test-ymls/invalid-json-error.yml", true, "");
+    run_tests_for_both_inventories("test-ymls/invalid-json-error.yml", true, "");
 }
 
 #[test]
 fn extra_vars() {
     setup();
-    run_test("test-ymls/extra-vars.yml", false, "cat=1 bat=2");
-    run_test(
-        "test-ymls/extra-vars.yml",
-        false,
-        "{ \"cat\": 1, \"bat\": 2 }",
-    );
-    run_test(
-        "test-ymls/extra-vars.yml",
-        false,
-        "@test-ymls/extra-vars.vars.yml",
-    );
+    run_tests_for_both_inventories("test-ymls/extra-vars.yml", false, "cat=1 bat=2");
+    run_tests_for_both_inventories("test-ymls/extra-vars.yml", false, "{ \"cat\": 1, \"bat\": 2 }");
+    run_tests_for_both_inventories("test-ymls/extra-vars.yml", false, "@test-ymls/extra-vars.vars.yml");
 }
 
 #[test]
 fn when_condition() {
     setup();
-    run_test("test-ymls/when-condition.yml", false, "condition=true");
+    run_tests_for_both_inventories("test-ymls/when-condition.yml", false, "condition=true");
 }

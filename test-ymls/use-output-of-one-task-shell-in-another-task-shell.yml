@@ -1,6 +1,6 @@
 ---
   - name: Test
-    hosts: local
+    hosts: test
     tasks:
       - name: Generate Output
         shell: echo "hello"
