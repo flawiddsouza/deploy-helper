@@ -467,7 +467,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let yaml_vars: IndexMap<String, Value> = read_yaml(extra_vars_file)?;
                 vars_map.extend(yaml_vars);
             } else {
-                eprintln!("{}", format!("Extra vars file not found: {}", extra_vars_file).red());
+                eprintln!(
+                    "{}",
+                    format!("Extra vars file not found: {}", extra_vars_file).red()
+                );
                 exit(1);
             }
         } else if extra_vars.starts_with('{') {
