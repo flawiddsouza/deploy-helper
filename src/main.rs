@@ -3,12 +3,12 @@ use indexmap::IndexMap;
 use minijinja::{value::Value as MiniJinjaValue, Environment, UndefinedBehavior};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use simple_expand_tilde::expand_tilde;
 use ssh2::Session;
 use std::env;
 use std::fs;
 use std::io::prelude::*;
 use std::net::TcpStream;
-use std::path::Path;
 use std::process::exit;
 use std::process::Command;
 use std::process::Stdio;
@@ -98,7 +98,8 @@ fn setup_ssh_session(
     session.handshake()?;
 
     if let Some(key_path) = ssh_key_path {
-        session.userauth_pubkey_file(user, None, Path::new(key_path), None)?;
+        let resolved_key_path = expand_tilde(key_path).ok_or("Failed to resolve home directory")?;
+        session.userauth_pubkey_file(user, None, &resolved_key_path, None)?;
     } else if let Some(pwd) = password {
         session.userauth_password(user, pwd)?;
     } else {

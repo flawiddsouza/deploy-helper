@@ -13,3 +13,4 @@ serde_json = "1.0.132"
 shell-words = "1.1.0"
 openssl = { version = "0.10", features = ["vendored"] }
 indexmap = { version = "2.6.0", features = ["serde"] }
+simple-expand-tilde = "0.4.4"
