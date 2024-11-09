@@ -24,7 +24,7 @@ struct TargetHost {
     port: Option<u16>,
     user: Option<String>,
     password: Option<String>,
-    ssh_key: Option<String>,
+    ssh_key_path: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -453,14 +453,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .as_deref()
                     .ok_or("Missing user for remote host")?;
                 let password = target_host.password.as_deref();
-                let ssh_key = target_host.ssh_key.as_deref();
+                let ssh_key_path = target_host.ssh_key_path.as_deref();
 
                 Some(setup_ssh_session(
                     &target_host.host,
                     port,
                     user,
                     password,
-                    ssh_key,
+                    ssh_key_path,
                 )?)
             } else {
                 None

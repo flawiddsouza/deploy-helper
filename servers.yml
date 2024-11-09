@@ -3,6 +3,6 @@ hosts:
     host: host ip
     port: 22
     user: username
-    ssh_key: /home/username/.ssh/my_host
+    ssh_key_path: /home/username/.ssh/my_host
   local:
     host: localhost
