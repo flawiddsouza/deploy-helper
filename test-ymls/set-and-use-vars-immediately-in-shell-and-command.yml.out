@@ -1,5 +1,17 @@
 Starting deployment: Test
 
+Processing host: local
+
+Executing task: Set & use var
+> echo test
+test
+
+Executing task: Set & use var
+> echo test2
+test2
+
+Processing host: remote
+
 Executing task: Set & use var
 > echo test
 test

@@ -1,6 +1,6 @@
 ---
   - name: Test
-    hosts: local
+    hosts: local, remote
     tasks:
       - name: Set vars
         vars:

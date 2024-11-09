@@ -1,5 +1,31 @@
 use std::fs;
 use std::process::Command;
+use std::sync::Once;
+
+static INIT: Once = Once::new();
+
+struct DockerGuard;
+
+impl Drop for DockerGuard {
+    fn drop(&mut self) {
+        stop_docker_container();
+    }
+}
+
+fn start_docker_container() {
+    let start_output = Command::new("docker")
+        .args(&["run", "-d", "--rm", "-p", "2222:2222", "--name", "ssh_test_server", "-e", "USER_NAME=root", "-e", "USER_PASSWD=password", "forumi0721/alpine-sshd:x64"])
+        .output()
+        .expect("Failed to start Docker container");
+
+    assert!(start_output.status.success());
+}
+
+fn stop_docker_container() {
+    let _stop_output = Command::new("docker")
+        .args(&["stop", "ssh_test_server"])
+        .output();
+}
 
 fn run_test(yml_file: &str, should_fail: bool, extra_vars: &str) {
     let output = Command::new("cargo")
@@ -24,18 +50,28 @@ fn run_test(yml_file: &str, should_fail: bool, extra_vars: &str) {
     assert_eq!(full_output, expected_output);
 }
 
+fn setup() -> DockerGuard {
+    INIT.call_once(|| {
+        start_docker_container();
+    });
+    DockerGuard
+}
+
 #[test]
 fn setting_and_debugging_vars() {
+    setup();
     run_test("test-ymls/setting-and-debugging-vars.yml", false, "");
 }
 
 #[test]
 fn use_vars_in_command_and_shell() {
+    setup();
     run_test("test-ymls/use-vars-in-command-and-shell.yml", false, "");
 }
 
 #[test]
 fn setting_working_directory_before_running_commands() {
+    setup();
     run_test(
         "test-ymls/setting-working-directory-before-running-commands.yml",
         false,
@@ -45,11 +81,13 @@ fn setting_working_directory_before_running_commands() {
 
 #[test]
 fn nested_json_parsing() {
+    setup();
     run_test("test-ymls/nested-json-parsing.yml", false, "");
 }
 
 #[test]
 fn setting_global_working_directory_before_running_commands() {
+    setup();
     run_test(
         "test-ymls/setting-global-working-directory-before-running-commands.yml",
         false,
@@ -59,6 +97,7 @@ fn setting_global_working_directory_before_running_commands() {
 
 #[test]
 fn dont_run_2nd_deploy_if_1st_fails() {
+    setup();
     run_test(
         "test-ymls/dont-run-2nd-task-or-2nd-deploy-if-1st-fails.yml",
         true,
@@ -68,6 +107,7 @@ fn dont_run_2nd_deploy_if_1st_fails() {
 
 #[test]
 fn use_output_of_one_task_shell_in_another_task_shell() {
+    setup();
     run_test(
         "test-ymls/use-output-of-one-task-shell-in-another-task-shell.yml",
         false,
@@ -77,6 +117,7 @@ fn use_output_of_one_task_shell_in_another_task_shell() {
 
 #[test]
 fn set_and_use_vars_immediately_in_shell_and_command() {
+    setup();
     run_test(
         "test-ymls/set-and-use-vars-immediately-in-shell-and-command.yml",
         false,
@@ -86,6 +127,7 @@ fn set_and_use_vars_immediately_in_shell_and_command() {
 
 #[test]
 fn debug_should_come_before_command_and_shell() {
+    setup();
     run_test(
         "test-ymls/debug-should-come-before-command-and-shell.yml",
         false,
@@ -95,6 +137,7 @@ fn debug_should_come_before_command_and_shell() {
 
 #[test]
 fn nested_json_parsing_missing_property_error() {
+    setup();
     run_test(
         "test-ymls/nested-json-parsing-missing-property-error.yml",
         true,
@@ -104,16 +147,19 @@ fn nested_json_parsing_missing_property_error() {
 
 #[test]
 fn missing_var_error() {
+    setup();
     run_test("test-ymls/missing-var-error.yml", true, "");
 }
 
 #[test]
 fn invalid_json_error() {
+    setup();
     run_test("test-ymls/invalid-json-error.yml", true, "");
 }
 
 #[test]
 fn extra_vars() {
+    setup();
     run_test("test-ymls/extra-vars.yml", false, "cat=1 bat=2");
     run_test(
         "test-ymls/extra-vars.yml",
@@ -129,5 +175,6 @@ fn extra_vars() {
 
 #[test]
 fn when_condition() {
+    setup();
     run_test("test-ymls/when-condition.yml", false, "condition=true");
 }

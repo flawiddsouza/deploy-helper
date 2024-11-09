@@ -6,3 +6,8 @@ hosts:
     ssh_key_path: /home/username/.ssh/my_host
   local:
     host: localhost
+  remote:
+    host: localhost
+    port: 2222
+    user: root
+    password: password
