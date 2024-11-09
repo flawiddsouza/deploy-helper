@@ -9,6 +9,7 @@ use ssh2::Session;
 use std::fs;
 use std::io::prelude::*;
 use std::net::TcpStream;
+use std::path::Path;
 use std::process::exit;
 use std::process::Command;
 use std::process::Stdio;
@@ -443,7 +444,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .short('e')
                 .long("extra-vars")
                 .value_name("VARS")
-                .help("Set additional variables as key=value or JSON")
+                .help("Set additional variables as key=value, JSON, or @file")
                 .num_args(1),
         )
         .get_matches();
@@ -459,7 +460,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut vars_map: IndexMap<String, Value> = IndexMap::new();
 
     if let Some(extra_vars) = extra_vars {
-        if extra_vars.starts_with('{') {
+        if extra_vars.starts_with('@') {
+            let extra_vars_file = &extra_vars[1..];
+            let extra_vars_path = Path::new(extra_vars_file);
+            if extra_vars_path.exists() {
+                let yaml_vars: IndexMap<String, Value> = read_yaml(extra_vars_file)?;
+                vars_map.extend(yaml_vars);
+            } else {
+                eprintln!("{}", format!("Extra vars file not found: {}", extra_vars_file).red());
+                exit(1);
+            }
+        } else if extra_vars.starts_with('{') {
             let json_vars: IndexMap<String, Value> = serde_json::from_str(extra_vars)?;
             vars_map.extend(json_vars);
         } else {

@@ -116,4 +116,5 @@ fn invalid_json_error() {
 fn extra_vars() {
     run_test("test-ymls/extra-vars.yml", false, "cat=1 bat=2");
     run_test("test-ymls/extra-vars.yml", false, "{ \"cat\": 1, \"bat\": 2 }");
+    run_test("test-ymls/extra-vars.yml", false, "@test-ymls/extra-vars.vars.yml");
 }
