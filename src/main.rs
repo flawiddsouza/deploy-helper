@@ -532,7 +532,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             if let Some(target_host) = server_config.hosts.get(host) {
                 let is_localhost = target_host.host == "localhost";
                 let session = if !is_localhost {
-                    let port = target_host.port.ok_or("Missing port for remote host")?;
+                    let port = target_host.port.unwrap_or(22); // Use default port 22 if not provided
                     let user = target_host
                         .user
                         .as_deref()
