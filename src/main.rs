@@ -256,7 +256,6 @@ fn execute_local_task(
 
 fn replace_placeholders(
     msg: &str,
-    register_map: &IndexMap<String, Register>,
     vars: &IndexMap<String, Value>,
 ) -> String {
     let mut env = Environment::new();
@@ -264,10 +263,6 @@ fn replace_placeholders(
     env.add_filter("from_json", from_json_filter);
     let template = env.template_from_str(msg).unwrap();
     let mut context = IndexMap::new();
-
-    for (key, value) in register_map {
-        context.insert(key.clone(), serde_json::to_value(value).unwrap());
-    }
 
     for (key, value) in vars {
         context.insert(key.clone(), value.clone());
@@ -297,10 +292,9 @@ fn replace_placeholders(
 
 fn replace_placeholders_vars(
     msg: &str,
-    register_map: &IndexMap<String, Register>,
     vars: &IndexMap<String, Value>,
 ) -> Value {
-    let rendered_str = replace_placeholders(msg, register_map, vars);
+    let rendered_str = replace_placeholders(msg, vars);
 
     if msg.contains("from_json") {
         serde_json::from_str(&rendered_str).unwrap_or_else(|err| {
@@ -354,7 +348,7 @@ fn handle_command_execution(
     display_output: bool,
     chdir: Option<&str>,
     register: Option<&String>,
-    register_map: &mut IndexMap<String, Register>,
+    vars_map: &mut IndexMap<String, Value>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let result = if is_localhost {
         execute_local_task(command, use_shell, display_output, chdir)
@@ -374,14 +368,12 @@ fn handle_command_execution(
             }
 
             if let Some(register) = register {
-                register_map.insert(
-                    register.clone(),
-                    Register {
-                        stdout: stdout.clone(),
-                        stderr: stderr.clone(),
-                        rc: exit_status,
-                    },
-                );
+                let register_value = serde_json::to_value(Register {
+                    stdout: stdout.clone(),
+                    stderr: stderr.clone(),
+                    rc: exit_status,
+                })?;
+                vars_map.insert(register.clone(), register_value);
                 println!(
                     "{}",
                     format!("Registering output to: {}", register).yellow()
@@ -408,11 +400,10 @@ fn process_commands(
     use_shell: bool,
     task_chdir: Option<&str>,
     register: Option<&String>,
-    register_map: &mut IndexMap<String, Register>,
-    vars_map: &IndexMap<String, Value>,
+    vars_map: &mut IndexMap<String, Value>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     for cmd in commands {
-        let substituted_cmd = replace_placeholders(&cmd, register_map, vars_map);
+        let substituted_cmd = replace_placeholders(&cmd, vars_map);
         println!("{}", format!("> {}", substituted_cmd).magenta());
 
         let display_output = register.is_none();
@@ -424,7 +415,7 @@ fn process_commands(
             display_output,
             task_chdir,
             register,
-            register_map,
+            vars_map,
         )?;
     }
 
@@ -433,12 +424,11 @@ fn process_commands(
 
 fn should_run_task(
     condition: &Option<String>,
-    register_map: &IndexMap<String, Register>,
     vars_map: &IndexMap<String, Value>,
 ) -> bool {
     if let Some(cond) = condition {
         let template_str = format!("{{% if {} %}}true{{% else %}}false{{% endif %}}", cond);
-        let rendered_cond = replace_placeholders(&template_str, register_map, vars_map);
+        let rendered_cond = replace_placeholders(&template_str, vars_map);
         if rendered_cond == "false" {
             false
         } else {
@@ -451,13 +441,12 @@ fn should_run_task(
 
 fn process_debug(
     debug: &Debug,
-    register_map: &IndexMap<String, Register>,
     vars_map: &IndexMap<String, Value>,
 ) {
     println!("{}", "Debug:".blue());
     for (key, msg) in debug.0.iter() {
         println!("{}", format!("{}:", key).blue());
-        let debug_msg = replace_placeholders(msg, register_map, vars_map);
+        let debug_msg = replace_placeholders(msg, vars_map);
         println!("{}", format!("{}", debug_msg).blue());
     }
 }
@@ -501,7 +490,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let deployment_docs: Vec<Vec<Deployment>> = read_yaml_multi(deploy_file)?;
     let deployments = deployment_docs.into_iter().flatten().collect::<Vec<_>>();
 
-    let mut register_map: IndexMap<String, Register> = IndexMap::new();
     let mut vars_map: IndexMap<String, Value> = IndexMap::new();
 
     if let Some(extra_vars) = extra_vars {
@@ -566,7 +554,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 };
 
                 for task in &dep.tasks {
-                    if !should_run_task(&task.when, &register_map, &vars_map) {
+                    if !should_run_task(&task.when, &vars_map) {
                         println!("{}", format!("Skipping task: {}\n", task.name).yellow());
                         continue;
                     }
@@ -578,7 +566,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     if let Some(vars) = &task.vars {
                         for (key, value) in vars {
                             let evaluated_value =
-                                replace_placeholders_vars(&value, &register_map, &vars_map);
+                                replace_placeholders_vars(&value, &vars_map);
                             vars_map.insert(key.clone(), evaluated_value);
                         }
                     }
@@ -589,14 +577,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let loop_items = task.r#loop.clone().unwrap_or_else(|| vec![Value::Null]);
 
                     for item in loop_items {
-                        let mut local_vars_map = vars_map.clone();
+                        vars_map.shift_remove("item");
 
                         if !item.is_null() {
-                            local_vars_map.insert("item".to_string(), item.clone());
+                            vars_map.insert("item".to_string(), item.clone());
                         }
 
                         if let Some(debug) = &task.debug {
-                            process_debug(debug, &register_map, &local_vars_map);
+                            process_debug(debug, &vars_map);
                         }
 
                         if let Some(shell_command) = &task.shell {
@@ -608,8 +596,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 true,
                                 task_chdir,
                                 task.register.as_ref(),
-                                &mut register_map,
-                                &local_vars_map,
+                                &mut vars_map,
                             )?;
                         }
 
@@ -622,8 +609,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 false,
                                 task_chdir,
                                 task.register.as_ref(),
-                                &mut register_map,
-                                &local_vars_map,
+                                &mut vars_map,
                             )?;
                         }
                     }
