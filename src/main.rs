@@ -254,10 +254,7 @@ fn execute_local_task(
     Ok((stdout_str, stderr_str, exit_status))
 }
 
-fn replace_placeholders(
-    msg: &str,
-    vars: &IndexMap<String, Value>,
-) -> String {
+fn replace_placeholders(msg: &str, vars: &IndexMap<String, Value>) -> String {
     let mut env = Environment::new();
     env.set_undefined_behavior(UndefinedBehavior::Strict);
     env.add_filter("from_json", from_json_filter);
@@ -290,10 +287,7 @@ fn replace_placeholders(
     })
 }
 
-fn replace_placeholders_vars(
-    msg: &str,
-    vars: &IndexMap<String, Value>,
-) -> Value {
+fn replace_placeholders_vars(msg: &str, vars: &IndexMap<String, Value>) -> Value {
     let rendered_str = replace_placeholders(msg, vars);
 
     if msg.contains("from_json") {
@@ -422,10 +416,7 @@ fn process_commands(
     Ok(())
 }
 
-fn should_run_task(
-    condition: &Option<String>,
-    vars_map: &IndexMap<String, Value>,
-) -> bool {
+fn should_run_task(condition: &Option<String>, vars_map: &IndexMap<String, Value>) -> bool {
     if let Some(cond) = condition {
         let template_str = format!("{{% if {} %}}true{{% else %}}false{{% endif %}}", cond);
         let rendered_cond = replace_placeholders(&template_str, vars_map);
@@ -439,10 +430,7 @@ fn should_run_task(
     }
 }
 
-fn process_debug(
-    debug: &Debug,
-    vars_map: &IndexMap<String, Value>,
-) {
+fn process_debug(debug: &Debug, vars_map: &IndexMap<String, Value>) {
     println!("{}", "Debug:".blue());
     for (key, msg) in debug.0.iter() {
         println!("{}", format!("{}:", key).blue());
@@ -565,8 +553,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                     if let Some(vars) = &task.vars {
                         for (key, value) in vars {
-                            let evaluated_value =
-                                replace_placeholders_vars(&value, &vars_map);
+                            let evaluated_value = replace_placeholders_vars(&value, &vars_map);
                             vars_map.insert(key.clone(), evaluated_value);
                         }
                     }
