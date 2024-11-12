@@ -47,6 +47,7 @@ struct Task {
     vars: Option<IndexMap<String, String>>,
     chdir: Option<String>,
     when: Option<String>,
+    r#loop: Option<Vec<Value>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -572,41 +573,51 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     // Debug print to verify vars_map
                     // println!("Vars map: {:?}", vars_map);
 
-                    if let Some(debug) = &task.debug {
-                        println!("{}", "Debug:".blue());
-                        for (key, msg) in debug.0.iter() {
-                            println!("{}", format!("{}:", key).blue());
-                            let debug_msg = replace_placeholders(msg, &register_map, &vars_map);
-                            println!("{}", format!("{}", debug_msg).blue());
+                    let loop_items = task.r#loop.clone().unwrap_or_else(|| vec![Value::Null]);
+
+                    for item in loop_items {
+                        let mut local_vars_map = vars_map.clone();
+
+                        if !item.is_null() {
+                            local_vars_map.insert("item".to_string(), item.clone());
                         }
-                    }
 
-                    if let Some(shell_command) = &task.shell {
-                        let commands = split_commands(shell_command);
-                        process_commands(
-                            commands,
-                            is_localhost,
-                            session.as_ref(),
-                            true,
-                            task_chdir,
-                            task.register.as_ref(),
-                            &mut register_map,
-                            &vars_map,
-                        )?;
-                    }
+                        if let Some(debug) = &task.debug {
+                            println!("{}", "Debug:".blue());
+                            for (key, msg) in debug.0.iter() {
+                                println!("{}", format!("{}:", key).blue());
+                                let debug_msg = replace_placeholders(msg, &register_map, &local_vars_map);
+                                println!("{}", format!("{}", debug_msg).blue());
+                            }
+                        }
 
-                    if let Some(command) = &task.command {
-                        let commands = split_commands(command);
-                        process_commands(
-                            commands,
-                            is_localhost,
-                            session.as_ref(),
-                            false,
-                            task_chdir,
-                            task.register.as_ref(),
-                            &mut register_map,
-                            &vars_map,
-                        )?;
+                        if let Some(shell_command) = &task.shell {
+                            let commands = split_commands(shell_command);
+                            process_commands(
+                                commands,
+                                is_localhost,
+                                session.as_ref(),
+                                true,
+                                task_chdir,
+                                task.register.as_ref(),
+                                &mut register_map,
+                                &local_vars_map,
+                            )?;
+                        }
+
+                        if let Some(command) = &task.command {
+                            let commands = split_commands(command);
+                            process_commands(
+                                commands,
+                                is_localhost,
+                                session.as_ref(),
+                                false,
+                                task_chdir,
+                                task.register.as_ref(),
+                                &mut register_map,
+                                &local_vars_map,
+                            )?;
+                        }
                     }
 
                     println!();

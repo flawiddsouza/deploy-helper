@@ -1,0 +1,45 @@
+Starting deployment: Test
+
+Executing task: loop
+> echo 1
+1
+> echo 2
+2
+> echo 3
+3
+
+Executing task: loop inner
+> echo Test (30)
+Test (30)
+> echo Test 2 (25)
+Test 2 (25)
+> echo Test 3 (10)
+Test 3 (10)
+> echo Test 4 (40)
+Test 4 (40)
+
+Executing task: loop (debug)
+Debug:
+item:
+1
+Debug:
+item:
+2
+Debug:
+item:
+3
+
+Executing task: loop inner (debug)
+Debug:
+item:
+Test (30)
+Debug:
+item:
+Test 2 (25)
+Debug:
+item:
+Test 3 (10)
+Debug:
+item:
+Test 4 (40)
+

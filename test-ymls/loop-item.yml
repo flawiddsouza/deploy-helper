@@ -1,0 +1,34 @@
+- name: Test
+  hosts: test
+  tasks:
+    - name: loop
+      command: echo {{ item }}
+      loop:
+        - 1
+        - 2
+        - 3
+
+    - name: loop inner
+      command: echo {{ item.name }} ({{ item.count }})
+      loop:
+        - { name: 'Test', count: 30 }
+        - { name: 'Test 2', count: 25 }
+        - { name: 'Test 3', count: 10 }
+        - { name: 'Test 4', count: 40 }
+
+    - name: loop (debug)
+      debug:
+        item: "{{ item }}"
+      loop:
+        - 1
+        - 2
+        - 3
+
+    - name: loop inner (debug)
+      debug:
+        item: "{{ item.name }} ({{ item.count }})"
+      loop:
+        - { name: 'Test', count: 30 }
+        - { name: 'Test 2', count: 25 }
+        - { name: 'Test 3', count: 10 }
+        - { name: 'Test 4', count: 40 }

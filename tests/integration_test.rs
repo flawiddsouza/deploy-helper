@@ -210,3 +210,9 @@ fn when_condition() {
     setup();
     run_tests_for_both_inventories("test-ymls/when-condition.yml", false, "condition=true");
 }
+
+#[test]
+fn loop_item() {
+    setup();
+    run_tests_for_both_inventories("test-ymls/loop-item.yml", false, "");
+}
