@@ -449,6 +449,19 @@ fn should_run_task(
     }
 }
 
+fn process_debug(
+    debug: &Debug,
+    register_map: &IndexMap<String, Register>,
+    vars_map: &IndexMap<String, Value>,
+) {
+    println!("{}", "Debug:".blue());
+    for (key, msg) in debug.0.iter() {
+        println!("{}", format!("{}:", key).blue());
+        let debug_msg = replace_placeholders(msg, register_map, vars_map);
+        println!("{}", format!("{}", debug_msg).blue());
+    }
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let matches = ClapCommand::new("deploy-helper")
         .version("1.0.3")
@@ -583,12 +596,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
 
                         if let Some(debug) = &task.debug {
-                            println!("{}", "Debug:".blue());
-                            for (key, msg) in debug.0.iter() {
-                                println!("{}", format!("{}:", key).blue());
-                                let debug_msg = replace_placeholders(msg, &register_map, &local_vars_map);
-                                println!("{}", format!("{}", debug_msg).blue());
-                            }
+                            process_debug(debug, &register_map, &local_vars_map);
                         }
 
                         if let Some(shell_command) = &task.shell {
