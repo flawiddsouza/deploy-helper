@@ -1,0 +1,18 @@
+Starting deployment: Test
+
+Executing task: Include tasks
+Including tasks from: include-tasks.include.yml
+
+Executing task: Task 1
+> echo "Include Task 1"
+Include Task 1
+
+Executing task: Task 2
+> echo "Include Task 2"
+Include Task 2
+
+
+Executing task: Task after include tasks
+> echo "Task after include tasks"
+Task after include tasks
+

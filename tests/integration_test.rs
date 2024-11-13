@@ -216,3 +216,9 @@ fn loop_item() {
     setup();
     run_tests_for_both_inventories("test-ymls/loop-item.yml", false, "");
 }
+
+#[test]
+fn include_tasks() {
+    setup();
+    run_tests_for_both_inventories("test-ymls/include-tasks.yml", false, "");
+}

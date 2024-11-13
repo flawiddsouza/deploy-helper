@@ -1,0 +1,8 @@
+- name: Test
+  hosts: test
+  tasks:
+    - name: Include tasks
+      include_tasks: include-tasks.include.yml
+
+    - name: Task after include tasks
+      command: echo "Task after include tasks"

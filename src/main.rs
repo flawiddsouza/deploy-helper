@@ -7,6 +7,7 @@ use colored::Colorize;
 use indexmap::IndexMap;
 use serde::Deserialize;
 use serde_json::Value;
+use ssh2::Session;
 use std::path::Path;
 use std::process::exit;
 
@@ -29,21 +30,99 @@ struct Deployment {
     name: String,
     hosts: String,
     chdir: Option<String>,
-    tasks: Vec<Task>,
+    tasks: Vec<common::Task>,
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-struct Task {
-    name: String,
-    shell: Option<String>,
-    command: Option<String>,
-    register: Option<String>,
-    debug: Option<common::Debug>,
-    vars: Option<IndexMap<String, String>>,
-    chdir: Option<String>,
-    when: Option<String>,
-    r#loop: Option<Vec<Value>>,
+fn process_tasks(
+    tasks: &[common::Task],
+    is_localhost: bool,
+    session: Option<&Session>,
+    dep_chdir: Option<&str>,
+    vars_map: &mut IndexMap<String, Value>,
+    deploy_file_dir: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    for task in tasks {
+        if !modules::when::process(&task.when, vars_map) {
+            println!("{}", format!("Skipping task: {}\n", task.name).yellow());
+            continue;
+        }
+
+        println!("{}", format!("Executing task: {}", task.name).cyan());
+
+        let task_chdir = task.chdir.as_deref().or(dep_chdir); // Use task-level chdir if present, otherwise use top-level chdir
+
+        if let Some(vars) = &task.vars {
+            for (key, value) in vars {
+                let evaluated_value = utils::replace_placeholders_vars(&value, vars_map);
+                vars_map.insert(key.clone(), evaluated_value);
+            }
+        }
+
+        // Debug print to verify vars_map
+        // println!("Vars map: {:?}", vars_map);
+
+        let loop_items = task.r#loop.clone().unwrap_or_else(|| vec![Value::Null]);
+
+        for item in loop_items {
+            vars_map.shift_remove("item");
+
+            if !item.is_null() {
+                vars_map.insert("item".to_string(), item.clone());
+            }
+
+            if let Some(debug) = &task.debug {
+                modules::debug::process(debug, vars_map);
+            }
+
+            if let Some(shell_command) = &task.shell {
+                let commands = utils::split_commands(shell_command);
+                modules::command::process(
+                    commands,
+                    is_localhost,
+                    session,
+                    true,
+                    task_chdir,
+                    task.register.as_ref(),
+                    vars_map,
+                )?;
+            }
+
+            if let Some(command) = &task.command {
+                let commands = utils::split_commands(command);
+                modules::command::process(
+                    commands,
+                    is_localhost,
+                    session,
+                    false,
+                    task_chdir,
+                    task.register.as_ref(),
+                    vars_map,
+                )?;
+            }
+
+            if let Some(include_file) = &task.include_tasks {
+                println!(
+                    "{}",
+                    format!("Including tasks from: {}\n", include_file).blue()
+                );
+                let include_file_path = deploy_file_dir.join(include_file);
+                let included_tasks =
+                    modules::include_tasks::process(include_file_path.to_str().unwrap())?;
+                process_tasks(
+                    &included_tasks,
+                    is_localhost,
+                    session,
+                    task_chdir,
+                    vars_map,
+                    deploy_file_dir,
+                )?;
+            }
+        }
+
+        println!();
+    }
+
+    Ok(())
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -114,6 +193,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
+    let deploy_file_path = Path::new(deploy_file);
+    let deploy_file_dir = deploy_file_path.parent().unwrap_or(Path::new("."));
+
     for dep in deployments {
         println!("{}", format!("Starting deployment: {}\n", dep.name).green());
 
@@ -148,69 +230,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     None
                 };
 
-                for task in &dep.tasks {
-                    if !modules::when::process(&task.when, &vars_map) {
-                        println!("{}", format!("Skipping task: {}\n", task.name).yellow());
-                        continue;
-                    }
-
-                    println!("{}", format!("Executing task: {}", task.name).cyan());
-
-                    let task_chdir = task.chdir.as_deref().or(dep.chdir.as_deref()); // Use task-level chdir if present, otherwise use top-level chdir
-
-                    if let Some(vars) = &task.vars {
-                        for (key, value) in vars {
-                            let evaluated_value =
-                                utils::replace_placeholders_vars(&value, &vars_map);
-                            vars_map.insert(key.clone(), evaluated_value);
-                        }
-                    }
-
-                    // Debug print to verify vars_map
-                    // println!("Vars map: {:?}", vars_map);
-
-                    let loop_items = task.r#loop.clone().unwrap_or_else(|| vec![Value::Null]);
-
-                    for item in loop_items {
-                        vars_map.shift_remove("item");
-
-                        if !item.is_null() {
-                            vars_map.insert("item".to_string(), item.clone());
-                        }
-
-                        if let Some(debug) = &task.debug {
-                            modules::debug::process(debug, &vars_map);
-                        }
-
-                        if let Some(shell_command) = &task.shell {
-                            let commands = utils::split_commands(shell_command);
-                            modules::command::process(
-                                commands,
-                                is_localhost,
-                                session.as_ref(),
-                                true,
-                                task_chdir,
-                                task.register.as_ref(),
-                                &mut vars_map,
-                            )?;
-                        }
-
-                        if let Some(command) = &task.command {
-                            let commands = utils::split_commands(command);
-                            modules::command::process(
-                                commands,
-                                is_localhost,
-                                session.as_ref(),
-                                false,
-                                task_chdir,
-                                task.register.as_ref(),
-                                &mut vars_map,
-                            )?;
-                        }
-                    }
-
-                    println!();
-                }
+                process_tasks(
+                    &dep.tasks,
+                    is_localhost,
+                    session.as_ref(),
+                    dep.chdir.as_deref(),
+                    &mut vars_map,
+                    deploy_file_dir,
+                )?;
             } else {
                 eprintln!(
                     "{}",
