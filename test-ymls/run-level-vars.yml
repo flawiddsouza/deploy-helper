@@ -1,0 +1,23 @@
+- name: Test
+  hosts: test
+  vars:
+    a: "a from run-level-vars"
+    b: "b from run-level-vars"
+  tasks:
+    - name: Echo a
+      command: echo "{{ a }}"
+
+    - name: Echo b
+      command: echo "{{ b }}"
+
+- name: Test 2
+  hosts: test
+  vars:
+    a: "a from run-level-vars 2"
+    b: "b from run-level-vars 2"
+  tasks:
+    - name: Echo a 2
+      command: echo "{{ a }}"
+
+    - name: Echo b 2
+      command: echo "{{ b }}"

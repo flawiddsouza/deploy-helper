@@ -1,0 +1,20 @@
+Starting deployment: Test
+
+Executing task: Echo a
+> echo "a from run-level-vars"
+a from run-level-vars
+
+Executing task: Echo b
+> echo "b from run-level-vars"
+b from run-level-vars
+
+Starting deployment: Test 2
+
+Executing task: Echo a 2
+> echo "a from run-level-vars 2"
+a from run-level-vars 2
+
+Executing task: Echo b 2
+> echo "b from run-level-vars 2"
+b from run-level-vars 2
+

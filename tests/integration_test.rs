@@ -222,3 +222,9 @@ fn include_tasks() {
     setup();
     run_tests_for_both_inventories("test-ymls/include-tasks.yml", false, "");
 }
+
+#[test]
+fn run_level_vars() {
+    setup();
+    run_tests_for_both_inventories("test-ymls/run-level-vars.yml", false, "");
+}
