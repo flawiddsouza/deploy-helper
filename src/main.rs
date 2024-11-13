@@ -1,11 +1,12 @@
+mod common;
+mod modules;
 mod utils;
 
 use clap::{Arg, Command as ClapCommand};
-use colored::*;
+use colored::Colorize;
 use indexmap::IndexMap;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::Value;
-use ssh2::Session;
 use std::path::Path;
 use std::process::exit;
 
@@ -38,126 +39,11 @@ struct Task {
     shell: Option<String>,
     command: Option<String>,
     register: Option<String>,
-    debug: Option<Debug>,
+    debug: Option<common::Debug>,
     vars: Option<IndexMap<String, String>>,
     chdir: Option<String>,
     when: Option<String>,
     r#loop: Option<Vec<Value>>,
-}
-
-#[derive(Debug, Deserialize)]
-struct Debug(IndexMap<String, String>);
-
-#[derive(Debug, Deserialize, Serialize)]
-struct Register {
-    stdout: String,
-    stderr: String,
-    rc: i32,
-}
-
-fn handle_command_execution(
-    is_localhost: bool,
-    session: Option<&Session>,
-    command: &str,
-    use_shell: bool,
-    display_output: bool,
-    chdir: Option<&str>,
-    register: Option<&String>,
-    vars_map: &mut IndexMap<String, Value>,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let result = if is_localhost {
-        utils::execute_local_command(command, use_shell, display_output, chdir)
-    } else {
-        utils::execute_ssh_command(session.unwrap(), command, use_shell, display_output, chdir)
-    };
-
-    match result {
-        Ok((stdout, stderr, exit_status)) => {
-            if exit_status != 0 {
-                return Err(format!(
-                    "Command execution failed with exit status: {}. Stopping further tasks.",
-                    exit_status
-                )
-                .red()
-                .into());
-            }
-
-            if let Some(register) = register {
-                let register_value = serde_json::to_value(Register {
-                    stdout: stdout.clone(),
-                    stderr: stderr.clone(),
-                    rc: exit_status,
-                })?;
-                vars_map.insert(register.clone(), register_value);
-                println!(
-                    "{}",
-                    format!("Registering output to: {}", register).yellow()
-                );
-            }
-        }
-        Err(e) => {
-            return Err(format!(
-                "Command execution failed with error: {}. Stopping further tasks.",
-                e
-            )
-            .red()
-            .into());
-        }
-    }
-
-    Ok(())
-}
-
-fn process_commands(
-    commands: Vec<String>,
-    is_localhost: bool,
-    session: Option<&Session>,
-    use_shell: bool,
-    task_chdir: Option<&str>,
-    register: Option<&String>,
-    vars_map: &mut IndexMap<String, Value>,
-) -> Result<(), Box<dyn std::error::Error>> {
-    for cmd in commands {
-        let substituted_cmd = utils::replace_placeholders(&cmd, vars_map);
-        println!("{}", format!("> {}", substituted_cmd).magenta());
-
-        let display_output = register.is_none();
-        handle_command_execution(
-            is_localhost,
-            session,
-            &substituted_cmd,
-            use_shell,
-            display_output,
-            task_chdir,
-            register,
-            vars_map,
-        )?;
-    }
-
-    Ok(())
-}
-
-fn should_run_task(condition: &Option<String>, vars_map: &IndexMap<String, Value>) -> bool {
-    if let Some(cond) = condition {
-        let template_str = format!("{{% if {} %}}true{{% else %}}false{{% endif %}}", cond);
-        let rendered_cond = utils::replace_placeholders(&template_str, vars_map);
-        if rendered_cond == "false" {
-            false
-        } else {
-            true
-        }
-    } else {
-        true
-    }
-}
-
-fn process_debug(debug: &Debug, vars_map: &IndexMap<String, Value>) {
-    println!("{}", "Debug:".blue());
-    for (key, msg) in debug.0.iter() {
-        println!("{}", format!("{}:", key).blue());
-        let debug_msg = utils::replace_placeholders(msg, vars_map);
-        println!("{}", format!("{}", debug_msg).blue());
-    }
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -263,7 +149,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 };
 
                 for task in &dep.tasks {
-                    if !should_run_task(&task.when, &vars_map) {
+                    if !modules::when::process(&task.when, &vars_map) {
                         println!("{}", format!("Skipping task: {}\n", task.name).yellow());
                         continue;
                     }
@@ -293,12 +179,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
 
                         if let Some(debug) = &task.debug {
-                            process_debug(debug, &vars_map);
+                            modules::debug::process(debug, &vars_map);
                         }
 
                         if let Some(shell_command) = &task.shell {
                             let commands = utils::split_commands(shell_command);
-                            process_commands(
+                            modules::command::process(
                                 commands,
                                 is_localhost,
                                 session.as_ref(),
@@ -311,7 +197,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                         if let Some(command) = &task.command {
                             let commands = utils::split_commands(command);
-                            process_commands(
+                            modules::command::process(
                                 commands,
                                 is_localhost,
                                 session.as_ref(),

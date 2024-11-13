@@ -1,4 +1,4 @@
-use colored::*;
+use colored::Colorize;
 use indexmap::IndexMap;
 use minijinja::{value::Value as MiniJinjaValue, Environment, UndefinedBehavior};
 use serde::Deserialize;
