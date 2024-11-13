@@ -1,0 +1,14 @@
+- name: Test
+  hosts: test
+  vars:
+    global_working_directory: tests/mocks/ls-dir
+  chdir: "{{ global_working_directory }}"
+  tasks:
+    - name: Global working directory
+      shell: cat file1.txt
+
+    - name: Task-level working directory
+      vars:
+        task_working_directory: tests/mocks/ls-dir2
+      chdir: "{{ task_working_directory }}"
+      shell: cat file1.txt

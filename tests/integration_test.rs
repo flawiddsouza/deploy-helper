@@ -228,3 +228,9 @@ fn run_level_vars() {
     setup();
     run_tests_for_both_inventories("test-ymls/run-level-vars.yml", false, "");
 }
+
+#[test]
+fn use_vars_in_chdir() {
+    setup();
+    run_tests_for_both_inventories("test-ymls/use-vars-in-chdir.yml", false, "");
+}

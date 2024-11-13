@@ -50,14 +50,17 @@ fn process_tasks(
 
         println!("{}", format!("Executing task: {}", task.name).cyan());
 
-        let task_chdir = task.chdir.as_deref().or(dep_chdir); // Use task-level chdir if present, otherwise use top-level chdir
-
         if let Some(vars) = &task.vars {
             for (key, value) in vars {
                 let evaluated_value = utils::replace_placeholders_vars(&value, vars_map);
                 vars_map.insert(key.clone(), evaluated_value);
             }
         }
+
+        // Use task-level chdir if present, otherwise use top-level chdir
+        let task_chdir = task.chdir.as_deref().or(dep_chdir).map(|s| {
+            utils::replace_placeholders(s, vars_map)
+        });
 
         // Debug print to verify vars_map
         // println!("Vars map: {:?}", vars_map);
@@ -82,7 +85,7 @@ fn process_tasks(
                     is_localhost,
                     session,
                     true,
-                    task_chdir,
+                    task_chdir.as_deref(),
                     task.register.as_ref(),
                     vars_map,
                 )?;
@@ -95,7 +98,7 @@ fn process_tasks(
                     is_localhost,
                     session,
                     false,
-                    task_chdir,
+                    task_chdir.as_deref(),
                     task.register.as_ref(),
                     vars_map,
                 )?;
@@ -113,7 +116,7 @@ fn process_tasks(
                     &included_tasks,
                     is_localhost,
                     session,
-                    task_chdir,
+                    task_chdir.as_deref(),
                     vars_map,
                     deploy_file_dir,
                 )?;
