@@ -60,9 +60,11 @@ fn process_tasks(
         }
 
         // Use task-level chdir if present, otherwise use top-level chdir
-        let task_chdir = task.chdir.as_deref().or(dep_chdir).map(|s| {
-            utils::replace_placeholders(s, vars_map)
-        });
+        let task_chdir = task
+            .chdir
+            .as_deref()
+            .or(dep_chdir)
+            .map(|s| utils::replace_placeholders(s, vars_map));
 
         // Debug print to verify vars_map
         // println!("Vars map: {:?}", vars_map);
