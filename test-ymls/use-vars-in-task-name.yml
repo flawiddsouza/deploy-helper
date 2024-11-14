@@ -1,0 +1,10 @@
+- name: Test
+  hosts: test
+  vars:
+    task1: Task 1
+    task2: Task 2
+  tasks:
+    - name: "{{ task1 }}"
+
+    - name: "{{ task2 }}"
+      when: false

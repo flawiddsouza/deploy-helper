@@ -234,3 +234,9 @@ fn use_vars_in_chdir() {
     setup();
     run_tests_for_both_inventories("test-ymls/use-vars-in-chdir.yml", false, "");
 }
+
+#[test]
+fn use_vars_in_task_name() {
+    setup();
+    run_tests_for_both_inventories("test-ymls/use-vars-in-task-name.yml", false, "");
+}

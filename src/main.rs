@@ -43,12 +43,14 @@ fn process_tasks(
     deploy_file_dir: &Path,
 ) -> Result<(), Box<dyn std::error::Error>> {
     for task in tasks {
+        let task_name = utils::replace_placeholders(&task.name, vars_map);
+
         if !modules::when::process(&task.when, vars_map) {
-            println!("{}", format!("Skipping task: {}\n", task.name).yellow());
+            println!("{}", format!("Skipping task: {}\n", task_name).yellow());
             continue;
         }
 
-        println!("{}", format!("Executing task: {}", task.name).cyan());
+        println!("{}", format!("Executing task: {}", task_name).cyan());
 
         if let Some(vars) = &task.vars {
             for (key, value) in vars {
