@@ -240,3 +240,13 @@ fn use_vars_in_task_name() {
     setup();
     run_tests_for_both_inventories("test-ymls/use-vars-in-task-name.yml", false, "");
 }
+
+#[test]
+fn use_vars_in_run_name() {
+    setup();
+    run_tests_for_both_inventories(
+        "test-ymls/use-vars-in-run-name.yml",
+        false,
+        "@test-ymls/use-vars-in-run-name.vars.yml",
+    );
+}

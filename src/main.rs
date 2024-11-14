@@ -203,7 +203,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let deploy_file_dir = deploy_file_path.parent().unwrap_or(Path::new("."));
 
     for dep in deployments {
-        println!("{}", format!("Starting deployment: {}\n", dep.name).green());
+        let dep_name = utils::replace_placeholders(&dep.name, &vars_map);
+        println!("{}", format!("Starting deployment: {}\n", dep_name).green());
 
         let hosts: Vec<&str> = dep.hosts.split(',').map(|s| s.trim()).collect();
 

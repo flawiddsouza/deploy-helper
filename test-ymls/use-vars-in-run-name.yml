@@ -1,0 +1,7 @@
+- name: Deployment {{ run_name }}
+  hosts: test
+  tasks:
+
+- name: Deployment {{ run_name_2 }}
+  hosts: test
+  tasks:
