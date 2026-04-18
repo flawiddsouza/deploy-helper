@@ -10,6 +10,10 @@ use std::io::prelude::*;
 use std::net::TcpStream;
 use std::process::{exit, Command, Stdio};
 
+fn shell_escape(s: &str) -> String {
+    format!("'{}'", s.replace('\'', "'\\''"))
+}
+
 pub fn replace_placeholders(msg: &str, vars: &IndexMap<String, Value>) -> String {
     let mut env = Environment::new();
     env.set_undefined_behavior(UndefinedBehavior::Strict);
@@ -152,27 +156,36 @@ pub fn execute_ssh_command(
     use_shell: bool,
     display_output: bool,
     chdir: Option<&str>,
+    login_shell: bool,
 ) -> Result<(String, String, i32), Box<dyn std::error::Error>> {
     session.set_blocking(true);
     let mut channel = session.channel_session()?;
 
-    if let Some(dir) = chdir {
-        channel.exec(&format!(
-            "cd {} && {}",
-            dir,
-            if use_shell {
-                format!("sh -c \"{}\"", command)
-            } else {
-                command.to_string()
-            }
-        ))?;
-    } else {
-        if use_shell {
-            channel.exec(&format!("sh -c \"{}\"", command))?;
+    // Use $SHELL -l -i so login files (.zprofile/.bash_profile) and interactive
+    // files (.zshrc/.bashrc) are both sourced — required for PATH entries added
+    // by tools like bun/nvm that only appear in .bashrc/.zshrc.
+    let final_cmd = if login_shell {
+        let base = if let Some(dir) = chdir {
+            format!("cd {} && {}", dir, command)
         } else {
-            channel.exec(command)?;
+            command.to_string()
+        };
+        let sh_arg = format!("exec \"$SHELL\" -l -i -c {}", shell_escape(&base));
+        format!("sh -c {}", shell_escape(&sh_arg))
+    } else if let Some(dir) = chdir {
+        let base = format!("cd {} && {}", dir, command);
+        if use_shell {
+            format!("sh -c {}", shell_escape(&base))
+        } else {
+            base
         }
-    }
+    } else if use_shell {
+        format!("sh -c {}", shell_escape(command))
+    } else {
+        command.to_string()
+    };
+
+    channel.exec(&final_cmd)?;
 
     let mut stdout = String::new();
     let mut stderr = String::new();
@@ -224,11 +237,17 @@ pub fn execute_local_command(
     use_shell: bool,
     display_output: bool,
     chdir: Option<&str>,
+    login_shell: bool,
 ) -> Result<(String, String, i32), Box<dyn std::error::Error>> {
-    let mut cmd = if use_shell {
-        let mut shell_cmd = Command::new("sh");
-        shell_cmd.arg("-c").arg(command);
-        shell_cmd
+    let mut cmd = if login_shell && !cfg!(windows) {
+        let sh_arg = format!("exec \"$SHELL\" -l -i -c {}", shell_escape(command));
+        let mut c = Command::new("sh");
+        c.arg("-c").arg(sh_arg);
+        c
+    } else if use_shell {
+        let mut c = Command::new("sh");
+        c.arg("-c").arg(command);
+        c
     } else {
         let parts =
             shell_words::split(command).map_err(|e| format!("Failed to parse command: {}", e))?;

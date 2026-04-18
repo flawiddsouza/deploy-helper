@@ -14,12 +14,13 @@ fn handle_command_execution(
     display_output: bool,
     chdir: Option<&str>,
     register: Option<&String>,
+    login_shell: bool,
     vars_map: &mut IndexMap<String, Value>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let result = if is_localhost {
-        utils::execute_local_command(command, use_shell, display_output, chdir)
+        utils::execute_local_command(command, use_shell, display_output, chdir, login_shell)
     } else {
-        utils::execute_ssh_command(session.unwrap(), command, use_shell, display_output, chdir)
+        utils::execute_ssh_command(session.unwrap(), command, use_shell, display_output, chdir, login_shell)
     };
 
     match result {
@@ -66,6 +67,7 @@ pub fn process(
     use_shell: bool,
     task_chdir: Option<&str>,
     register: Option<&String>,
+    login_shell: bool,
     vars_map: &mut IndexMap<String, Value>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     for cmd in commands {
@@ -81,6 +83,7 @@ pub fn process(
             display_output,
             task_chdir,
             register,
+            login_shell,
             vars_map,
         )?;
     }

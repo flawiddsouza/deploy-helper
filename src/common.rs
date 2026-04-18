@@ -24,4 +24,5 @@ pub struct Task {
     pub when: Option<String>,
     pub r#loop: Option<Vec<Value>>,
     pub include_tasks: Option<String>,
+    pub login_shell: Option<bool>,
 }

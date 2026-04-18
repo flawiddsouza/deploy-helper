@@ -30,6 +30,7 @@ struct Deployment {
     name: String,
     hosts: String,
     chdir: Option<String>,
+    login_shell: Option<bool>,
     vars: Option<IndexMap<String, String>>,
     tasks: Vec<common::Task>,
 }
@@ -39,6 +40,7 @@ fn process_tasks(
     is_localhost: bool,
     session: Option<&Session>,
     dep_chdir: Option<&str>,
+    dep_login_shell: bool,
     vars_map: &mut IndexMap<String, Value>,
     deploy_file_dir: &Path,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -66,6 +68,8 @@ fn process_tasks(
             .or(dep_chdir)
             .map(|s| utils::replace_placeholders(s, vars_map));
 
+        let use_login_shell = task.login_shell.unwrap_or(dep_login_shell);
+
         // Debug print to verify vars_map
         // println!("Vars map: {:?}", vars_map);
 
@@ -91,6 +95,7 @@ fn process_tasks(
                     true,
                     task_chdir.as_deref(),
                     task.register.as_ref(),
+                    use_login_shell,
                     vars_map,
                 )?;
             }
@@ -104,6 +109,7 @@ fn process_tasks(
                     false,
                     task_chdir.as_deref(),
                     task.register.as_ref(),
+                    use_login_shell,
                     vars_map,
                 )?;
             }
@@ -121,6 +127,7 @@ fn process_tasks(
                     is_localhost,
                     session,
                     task_chdir.as_deref(),
+                    use_login_shell,
                     vars_map,
                     deploy_file_dir,
                 )?;
@@ -251,6 +258,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     is_localhost,
                     session.as_ref(),
                     dep.chdir.as_deref(),
+                    dep.login_shell.unwrap_or(false),
                     &mut vars_map,
                     deploy_file_dir,
                 )?;
