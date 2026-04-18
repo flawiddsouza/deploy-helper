@@ -20,10 +20,10 @@ jobs:
           #   artifact_name: binary-macos
           #   binary_path: ./target/release/deploy-helper
           #   upload_name: deploy-helper-macos
-          # - os: windows-latest
-          #   artifact_name: binary-windows
-          #   binary_path: ./target/release/deploy-helper.exe
-          #   upload_name: deploy-helper-windows
+          - os: windows-latest
+            artifact_name: binary-windows
+            binary_path: ./target/release/deploy-helper.exe
+            upload_name: deploy-helper-windows.exe
 
     steps:
     - name: Checkout code
@@ -45,8 +45,17 @@ jobs:
         rustup target add x86_64-unknown-linux-musl
         cargo build --release --target x86_64-unknown-linux-musl
 
-    - name: Rename binary
+    - name: Build for Windows
+      if: matrix.os == 'windows-latest'
+      run: cargo build --release
+
+    - name: Rename binary (Linux/macOS)
+      if: matrix.os != 'windows-latest'
       run: mv ${{ matrix.binary_path }} ${{ matrix.upload_name }}
+
+    - name: Rename binary (Windows)
+      if: matrix.os == 'windows-latest'
+      run: Move-Item -Path ${{ matrix.binary_path }} -Destination ${{ matrix.upload_name }}
 
     - name: Release
       uses: softprops/action-gh-release@v2

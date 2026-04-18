@@ -63,30 +63,57 @@ pub fn replace_placeholders_vars(msg: &str, vars: &IndexMap<String, Value>) -> V
     }
 }
 
+fn heredoc_delimiter(line: &str) -> Option<String> {
+    let pos = line.find("<<")?;
+    let after = line[pos + 2..].trim_start();
+    let after = after.strip_prefix('-').unwrap_or(after).trim_start();
+    let raw = if let Some(rest) = after.strip_prefix('\'') {
+        rest.split('\'').next()?
+    } else if let Some(rest) = after.strip_prefix('"') {
+        rest.split('"').next()?
+    } else {
+        after.split(|c: char| c.is_whitespace()).next()?
+    };
+    if raw.is_empty() { None } else { Some(raw.to_string()) }
+}
+
 pub fn split_commands(input: &str) -> Vec<String> {
-    let lines: Vec<&str> = input.lines().collect();
     let mut commands = Vec::new();
     let mut current_command = String::new();
+    let mut heredoc_end: Option<String> = None;
 
-    for line in lines {
+    for line in input.lines() {
+        if let Some(ref delimiter) = heredoc_end {
+            current_command.push('\n');
+            current_command.push_str(line);
+            if line.trim() == delimiter.as_str() {
+                heredoc_end = None;
+                commands.push(current_command.clone());
+                current_command.clear();
+            }
+            continue;
+        }
+
         let trimmed = line.trim();
         if trimmed.is_empty() {
             continue;
         }
 
         if trimmed.ends_with('\\') {
-            // Remove the trailing backslash and any whitespace before it
             let clean_line = trimmed.trim_end_matches('\\').trim_end();
             current_command.push_str(clean_line);
-            current_command.push(' '); // Add space between continued lines
+            current_command.push(' ');
         } else {
             current_command.push_str(trimmed);
-            commands.push(current_command.clone());
-            current_command.clear();
+            if let Some(delim) = heredoc_delimiter(trimmed) {
+                heredoc_end = Some(delim);
+            } else {
+                commands.push(current_command.clone());
+                current_command.clear();
+            }
         }
     }
 
-    // Handle last command if it doesn't end with newline
     if !current_command.is_empty() {
         commands.push(current_command);
     }
@@ -199,7 +226,7 @@ pub fn execute_ssh_command(
                     let output = String::from_utf8_lossy(&stdout_buffer[..read_bytes]);
                     stdout.push_str(&output);
                     if display_output {
-                        print!("{}", format!("{}", output).white());
+                        print!("{}", output.white());
                     }
                 }
             }
@@ -213,7 +240,7 @@ pub fn execute_ssh_command(
                     let error_output = String::from_utf8_lossy(&stderr_buffer[..read_bytes]);
                     stderr.push_str(&error_output);
                     if display_output {
-                        print!("{}", format!("{}", error_output).red());
+                        print!("{}", error_output.red());
                     }
                 }
             }
@@ -228,6 +255,11 @@ pub fn execute_ssh_command(
 
     channel.wait_close()?;
     let exit_status = channel.exit_status()?;
+
+    // BufReader::lines() used in local execution strips trailing newlines;
+    // match that behaviour here so registered output is consistent.
+    let stdout = stdout.trim_end_matches(['\n', '\r']).to_string();
+    let stderr = stderr.trim_end_matches(['\n', '\r']).to_string();
 
     Ok((stdout, stderr, exit_status))
 }
@@ -301,4 +333,113 @@ pub fn execute_local_command(
     let exit_status = child.wait()?.code().unwrap_or(-1);
 
     Ok((stdout_str, stderr_str, exit_status))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // shell_escape
+
+    #[test]
+    fn test_shell_escape_simple() {
+        assert_eq!(shell_escape("hello"), "'hello'");
+    }
+
+    #[test]
+    fn test_shell_escape_with_spaces() {
+        assert_eq!(shell_escape("hello world"), "'hello world'");
+    }
+
+    #[test]
+    fn test_shell_escape_with_single_quote() {
+        assert_eq!(shell_escape("it's"), "'it'\\''s'");
+    }
+
+    #[test]
+    fn test_shell_escape_with_special_chars() {
+        assert_eq!(shell_escape("a && b | c"), "'a && b | c'");
+    }
+
+    // heredoc_delimiter
+
+    #[test]
+    fn test_heredoc_delimiter_single_quoted() {
+        assert_eq!(heredoc_delimiter("cat << 'EOF' > file"), Some("EOF".to_string()));
+    }
+
+    #[test]
+    fn test_heredoc_delimiter_double_quoted() {
+        assert_eq!(heredoc_delimiter("cat << \"EOF\""), Some("EOF".to_string()));
+    }
+
+    #[test]
+    fn test_heredoc_delimiter_unquoted() {
+        assert_eq!(heredoc_delimiter("cat << EOF"), Some("EOF".to_string()));
+    }
+
+    #[test]
+    fn test_heredoc_delimiter_dash() {
+        assert_eq!(heredoc_delimiter("cat <<- 'EOF'"), Some("EOF".to_string()));
+    }
+
+    #[test]
+    fn test_heredoc_delimiter_none() {
+        assert_eq!(heredoc_delimiter("echo hello"), None);
+    }
+
+    // split_commands
+
+    #[test]
+    fn test_split_commands_single() {
+        assert_eq!(split_commands("echo hello"), vec!["echo hello"]);
+    }
+
+    #[test]
+    fn test_split_commands_multiple() {
+        let input = "echo one\necho two\necho three";
+        assert_eq!(split_commands(input), vec!["echo one", "echo two", "echo three"]);
+    }
+
+    #[test]
+    fn test_split_commands_skips_empty_lines() {
+        let input = "echo one\n\necho two";
+        assert_eq!(split_commands(input), vec!["echo one", "echo two"]);
+    }
+
+    #[test]
+    fn test_split_commands_line_continuation() {
+        let input = "echo \\\none \\\ntwo";
+        assert_eq!(split_commands(input), vec!["echo one two"]);
+    }
+
+    #[test]
+    fn test_split_commands_heredoc_single_quoted() {
+        let input = "cat << 'EOF' > /tmp/file\nline one\nline two\nEOF";
+        assert_eq!(split_commands(input), vec!["cat << 'EOF' > /tmp/file\nline one\nline two\nEOF"]);
+    }
+
+    #[test]
+    fn test_split_commands_heredoc_unquoted() {
+        let input = "cat << EOF\ncontent\nEOF";
+        assert_eq!(split_commands(input), vec!["cat << EOF\ncontent\nEOF"]);
+    }
+
+    #[test]
+    fn test_split_commands_heredoc_then_command() {
+        let input = "cat << 'EOF' > /tmp/file\ncontent\nEOF\necho done";
+        assert_eq!(
+            split_commands(input),
+            vec!["cat << 'EOF' > /tmp/file\ncontent\nEOF", "echo done"]
+        );
+    }
+
+    #[test]
+    fn test_split_commands_heredoc_preserves_indentation() {
+        let input = "cat << 'EOF' > /tmp/file\n    indented\n        more\nEOF";
+        assert_eq!(
+            split_commands(input),
+            vec!["cat << 'EOF' > /tmp/file\n    indented\n        more\nEOF"]
+        );
+    }
 }

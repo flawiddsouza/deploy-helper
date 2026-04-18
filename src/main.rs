@@ -212,19 +212,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let deploy_file_dir = deploy_file_path.parent().unwrap_or(Path::new("."));
 
     for dep in deployments {
-        let dep_name = utils::replace_placeholders(&dep.name, &vars_map);
-        println!("{}", format!("Starting deployment: {}\n", dep_name).green());
-
-        let hosts: Vec<&str> = dep.hosts.split(',').map(|s| s.trim()).collect();
-
-        let hosts_len = hosts.len();
-
         if let Some(dep_vars) = &dep.vars {
             for (key, value) in dep_vars {
                 let evaluated_value = utils::replace_placeholders_vars(&value, &vars_map);
                 vars_map.insert(key.clone(), evaluated_value);
             }
         }
+
+        let dep_name = utils::replace_placeholders(&dep.name, &vars_map);
+        if let Some(chdir) = &dep.chdir {
+            let resolved = utils::replace_placeholders(chdir, &vars_map);
+            println!("{}", format!("Starting deployment: {}", dep_name).green());
+            println!("{}", format!("(chdir: {})\n", resolved).bright_black());
+        } else {
+            println!("{}", format!("Starting deployment: {}\n", dep_name).green());
+        }
+
+        let hosts: Vec<&str> = dep.hosts.split(',').map(|s| s.trim()).collect();
+
+        let hosts_len = hosts.len();
 
         for host in hosts {
             if hosts_len > 1 {

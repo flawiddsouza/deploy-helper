@@ -1,4 +1,5 @@
 Starting deployment: Test
+(chdir: tests/mocks/ls-dir)
 
 Executing task: Global working directory
 > cat file1.txt

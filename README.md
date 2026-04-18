@@ -32,3 +32,44 @@ To set up a development environment for `deploy-helper`, follow these steps:
     ```
 
     Replace `<deploy.yml>` with the path to your deployment configuration file.
+
+## Install from Source
+
+```sh
+cargo install --path .
+```
+
+Builds and installs the `deploy-helper` binary to your Cargo bin directory, making it available globally.
+
+## Testing
+
+Tests are integration tests located in `tests/integration_test.rs`. Each test runs the binary against a YAML deployment file in `test-ymls/` and compares the output to a corresponding `.out` file.
+
+Tests run against two inventory targets in parallel: a local connection and a remote SSH connection. The SSH target requires Docker. A container is started automatically before the tests run and stopped after.
+
+### Prerequisites
+
+- [Docker](https://www.docker.com/) must be installed and running.
+
+> **Note:** Tests are written for Linux. On Windows, run them via WSL:
+> ```sh
+> wsl -- bash -c "cargo test"
+> ```
+
+### Run all tests
+
+```sh
+cargo test
+```
+
+### Run a specific test
+
+```sh
+cargo test <test_name>
+```
+
+For example:
+
+```sh
+cargo test use_vars_in_task_name
+```
