@@ -100,10 +100,104 @@ fn heredoc_delimiter(line: &str) -> Option<String> {
     if raw.is_empty() { None } else { Some(raw.to_string()) }
 }
 
+fn token_depth_delta(word: &str, cmd_position: bool) -> i32 {
+    if !cmd_position {
+        return 0;
+    }
+    match word {
+        "if" | "case" | "for" | "while" | "until" | "select" => 1,
+        "fi" | "esac" | "done" => -1,
+        _ => 0,
+    }
+}
+
+// Scans one logical line and updates a running nesting depth for shell
+// compound commands (if/fi, case/esac, for|while|until|select/done). Used
+// so multi-line compound blocks stay together as a single command instead
+// of each line being dispatched separately.
+fn update_depth(line: &str, depth: &mut i32) {
+    let mut chars = line.chars().peekable();
+    let mut cmd_position = true;
+    let mut word = String::new();
+    let mut in_single = false;
+    let mut in_double = false;
+
+    while let Some(c) = chars.next() {
+        if in_single {
+            if c == '\'' {
+                in_single = false;
+            }
+            word.push(c);
+            continue;
+        }
+        if in_double {
+            if c == '\\' {
+                if let Some(&next) = chars.peek() {
+                    word.push('\\');
+                    word.push(next);
+                    chars.next();
+                    continue;
+                }
+            }
+            if c == '"' {
+                in_double = false;
+            }
+            word.push(c);
+            continue;
+        }
+        match c {
+            '\'' => {
+                in_single = true;
+                word.push(c);
+            }
+            '"' => {
+                in_double = true;
+                word.push(c);
+            }
+            '\\' => {
+                if let Some(&next) = chars.peek() {
+                    word.push(next);
+                    chars.next();
+                }
+            }
+            '#' if word.is_empty() => break,
+            ' ' | '\t' => {
+                if !word.is_empty() {
+                    *depth += token_depth_delta(&word, cmd_position);
+                    if *depth < 0 {
+                        *depth = 0;
+                    }
+                    cmd_position = false;
+                    word.clear();
+                }
+            }
+            ';' | '&' | '|' => {
+                if !word.is_empty() {
+                    *depth += token_depth_delta(&word, cmd_position);
+                    if *depth < 0 {
+                        *depth = 0;
+                    }
+                    word.clear();
+                }
+                cmd_position = true;
+            }
+            _ => word.push(c),
+        }
+    }
+    if !word.is_empty() {
+        *depth += token_depth_delta(&word, cmd_position);
+        if *depth < 0 {
+            *depth = 0;
+        }
+    }
+}
+
 pub fn split_commands(input: &str) -> Vec<String> {
     let mut commands = Vec::new();
     let mut current_command = String::new();
     let mut heredoc_end: Option<String> = None;
+    let mut depth: i32 = 0;
+    let mut pending_continuation = String::new();
 
     for line in input.lines() {
         if let Some(ref delimiter) = heredoc_end {
@@ -111,8 +205,9 @@ pub fn split_commands(input: &str) -> Vec<String> {
             current_command.push_str(line);
             if line.trim() == delimiter.as_str() {
                 heredoc_end = None;
-                commands.push(current_command.clone());
-                current_command.clear();
+                if depth == 0 {
+                    commands.push(std::mem::take(&mut current_command));
+                }
             }
             continue;
         }
@@ -124,16 +219,36 @@ pub fn split_commands(input: &str) -> Vec<String> {
 
         if trimmed.ends_with('\\') {
             let clean_line = trimmed.trim_end_matches('\\').trim_end();
-            current_command.push_str(clean_line);
-            current_command.push(' ');
-        } else {
-            current_command.push_str(trimmed);
-            if let Some(delim) = heredoc_delimiter(trimmed) {
-                heredoc_end = Some(delim);
-            } else {
-                commands.push(current_command.clone());
-                current_command.clear();
+            if !pending_continuation.is_empty() {
+                pending_continuation.push(' ');
             }
+            pending_continuation.push_str(clean_line);
+            continue;
+        }
+
+        let logical_line = if pending_continuation.is_empty() {
+            trimmed.to_string()
+        } else {
+            let mut s = std::mem::take(&mut pending_continuation);
+            s.push(' ');
+            s.push_str(trimmed);
+            s
+        };
+
+        if !current_command.is_empty() {
+            current_command.push('\n');
+        }
+        current_command.push_str(&logical_line);
+
+        if let Some(delim) = heredoc_delimiter(&logical_line) {
+            heredoc_end = Some(delim);
+            continue;
+        }
+
+        update_depth(&logical_line, &mut depth);
+
+        if depth == 0 {
+            commands.push(std::mem::take(&mut current_command));
         }
     }
 
@@ -498,6 +613,138 @@ mod tests {
         assert_eq!(
             split_commands(input),
             vec!["cat << 'EOF' > /tmp/file\n    indented\n        more\nEOF"]
+        );
+    }
+
+    #[test]
+    fn test_split_commands_if_block() {
+        let input = "if [ -f /tmp/x ]; then\n  echo yes\nfi";
+        assert_eq!(
+            split_commands(input),
+            vec!["if [ -f /tmp/x ]; then\necho yes\nfi"]
+        );
+    }
+
+    #[test]
+    fn test_split_commands_if_else_elif() {
+        let input = "if a; then\n  x\nelif b; then\n  y\nelse\n  z\nfi";
+        assert_eq!(
+            split_commands(input),
+            vec!["if a; then\nx\nelif b; then\ny\nelse\nz\nfi"]
+        );
+    }
+
+    #[test]
+    fn test_split_commands_for_loop() {
+        let input = "for x in a b c; do\n  echo $x\ndone";
+        assert_eq!(
+            split_commands(input),
+            vec!["for x in a b c; do\necho $x\ndone"]
+        );
+    }
+
+    #[test]
+    fn test_split_commands_while_loop() {
+        let input = "while true; do\n  echo hi\ndone";
+        assert_eq!(
+            split_commands(input),
+            vec!["while true; do\necho hi\ndone"]
+        );
+    }
+
+    #[test]
+    fn test_split_commands_until_loop() {
+        let input = "until test -f /tmp/x; do\n  sleep 1\ndone";
+        assert_eq!(
+            split_commands(input),
+            vec!["until test -f /tmp/x; do\nsleep 1\ndone"]
+        );
+    }
+
+    #[test]
+    fn test_split_commands_case_statement() {
+        let input = "case $x in\n  a) echo A;;\n  b) echo B;;\nesac";
+        assert_eq!(
+            split_commands(input),
+            vec!["case $x in\na) echo A;;\nb) echo B;;\nesac"]
+        );
+    }
+
+    #[test]
+    fn test_split_commands_nested_if() {
+        let input = "if a; then\n  if b; then\n    c\n  fi\nfi";
+        assert_eq!(
+            split_commands(input),
+            vec!["if a; then\nif b; then\nc\nfi\nfi"]
+        );
+    }
+
+    #[test]
+    fn test_split_commands_compound_then_next_command() {
+        let input = "if foo; then\n  bar\nfi\necho done";
+        assert_eq!(
+            split_commands(input),
+            vec!["if foo; then\nbar\nfi", "echo done"]
+        );
+    }
+
+    #[test]
+    fn test_split_commands_compound_on_one_line() {
+        let input = "if foo; then bar; fi\necho next";
+        assert_eq!(
+            split_commands(input),
+            vec!["if foo; then bar; fi", "echo next"]
+        );
+    }
+
+    #[test]
+    fn test_split_commands_keyword_as_argument() {
+        let input = "echo for\necho done";
+        assert_eq!(split_commands(input), vec!["echo for", "echo done"]);
+    }
+
+    #[test]
+    fn test_split_commands_keyword_in_single_quotes() {
+        let input = "echo 'if foo'\necho next";
+        assert_eq!(
+            split_commands(input),
+            vec!["echo 'if foo'", "echo next"]
+        );
+    }
+
+    #[test]
+    fn test_split_commands_keyword_in_double_quotes() {
+        let input = "echo \"if foo\"\necho next";
+        assert_eq!(
+            split_commands(input),
+            vec!["echo \"if foo\"", "echo next"]
+        );
+    }
+
+    #[test]
+    fn test_split_commands_if_with_heredoc_inside() {
+        let input = "if foo; then\n  cat << EOF\nhello\nEOF\nfi";
+        assert_eq!(
+            split_commands(input),
+            vec!["if foo; then\ncat << EOF\nhello\nEOF\nfi"]
+        );
+    }
+
+    #[test]
+    fn test_split_commands_comment_with_keyword() {
+        let input = "echo hi # if this were a thing\necho bye";
+        assert_eq!(
+            split_commands(input),
+            vec!["echo hi # if this were a thing", "echo bye"]
+        );
+    }
+
+    #[test]
+    fn test_split_commands_dns_record_block() {
+        let input = "existing=$(curl -s ... | grep -o '\"name\":\"sub\"' || true)\nif [ -z \"$existing\" ]; then\n  curl -X POST ...\n  sleep 30\nfi";
+        assert_eq!(
+            split_commands(input),
+            vec!["existing=$(curl -s ... | grep -o '\"name\":\"sub\"' || true)", "if [ -z \"$existing\" ]; then\ncurl -X POST ...\nsleep 30\nfi"]
         );
     }
 
