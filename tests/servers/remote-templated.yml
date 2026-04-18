@@ -1,0 +1,6 @@
+hosts:
+  test:
+    host: "{{ remote_host }}"
+    port: 2222
+    user: "{{ remote_user }}"
+    password: "{{ remote_password }}"

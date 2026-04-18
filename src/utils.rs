@@ -148,28 +148,63 @@ pub fn from_json_filter(value: MiniJinjaValue) -> MiniJinjaValue {
     value
 }
 
-pub fn read_yaml<T>(filename: &str) -> Result<T, Box<dyn std::error::Error>>
-where
-    T: for<'de> Deserialize<'de>,
-{
-    let contents = fs::read_to_string(filename)?;
-    let yaml_data: T = serde_yaml::from_str(&contents)?;
-    Ok(yaml_data)
+fn annotate_yaml_error(filename: &str, contents: &str, err: serde_yaml::Error) -> String {
+    let msg = err.to_string();
+    if !msg.contains("invalid type: map, expected a string") {
+        return format!("{}: {}", filename, msg);
+    }
+    let Some(loc) = err.location() else {
+        return format!("{}: {}", filename, msg);
+    };
+    let line_no = loc.line();
+    let Some(line) = contents.lines().nth(line_no.saturating_sub(1)) else {
+        return format!("{}: {}", filename, msg);
+    };
+    if !line.contains("{{") {
+        return format!("{}: {}", filename, msg);
+    }
+    format!(
+        "{}: line {} has an unquoted {{{{ ... }}}} value:\n    {}\n  YAML reads a leading {{ as the start of an inline object, so {{{{ var }}}} gets parsed as a nested object instead of text.\n  Wrap it in quotes so YAML treats it as a string, e.g. \"{{{{ var }}}}\" or \"{{{{ var }}}}/path\".",
+        filename,
+        line_no,
+        line.trim_end(),
+    )
 }
 
-pub fn read_yaml_multi<T>(filename: &str) -> Result<Vec<T>, Box<dyn std::error::Error>>
+fn read_file_or_exit(filename: &str) -> String {
+    fs::read_to_string(filename).unwrap_or_else(|e| {
+        eprintln!("{}", format!("Failed to read {}: {}", filename, e).red());
+        exit(1);
+    })
+}
+
+pub fn read_yaml<T>(filename: &str) -> T
 where
     T: for<'de> Deserialize<'de>,
 {
-    let contents = fs::read_to_string(filename)?;
+    let contents = read_file_or_exit(filename);
+    serde_yaml::from_str(&contents).unwrap_or_else(|e| {
+        eprintln!("{}", annotate_yaml_error(filename, &contents, e).red());
+        exit(1);
+    })
+}
+
+pub fn read_yaml_multi<T>(filename: &str) -> Vec<T>
+where
+    T: for<'de> Deserialize<'de>,
+{
+    let contents = read_file_or_exit(filename);
     let mut results = Vec::new();
 
     for document in serde_yaml::Deserializer::from_str(&contents) {
-        let item = T::deserialize(document)?;
+        let item = T::deserialize(document).unwrap_or_else(|e| {
+            eprintln!("{}", annotate_yaml_error(filename, &contents, e).red());
+            exit(1);
+        });
         results.push(item);
     }
 
-    Ok(results)
+    results
 }
 
 pub fn setup_ssh_session(
@@ -505,5 +540,48 @@ mod tests {
     fn test_wrap_become_su_nopasswd() {
         let result = wrap_become_command("nginx -t", "su", None);
         assert_eq!(result, "su -c 'nginx -t'");
+    }
+
+    // annotate_yaml_error
+
+    #[test]
+    fn test_annotate_yaml_error_unquoted_template() {
+        let contents = "- name: x\n  chdir: {{ app_path }}\n";
+        #[derive(serde::Deserialize, Debug)]
+        struct S {
+            #[allow(dead_code)]
+            name: String,
+            #[allow(dead_code)]
+            chdir: String,
+        }
+        let err = serde_yaml::from_str::<Vec<S>>(contents).unwrap_err();
+        let out = annotate_yaml_error("setup.yml", contents, err);
+        assert!(out.contains("unquoted"), "missing plain-language hint in: {}", out);
+        assert!(out.contains("line 2"), "missing line number in: {}", out);
+        assert!(out.contains("chdir: {{ app_path }}"), "missing source line in: {}", out);
+        assert!(!out.contains("invalid type: map"), "leaks raw serde_yaml jargon: {}", out);
+    }
+
+    #[test]
+    fn test_annotate_yaml_error_passthrough_when_not_map_error() {
+        let contents = "- name: x\n  chdir: [invalid\n";
+        let err = serde_yaml::from_str::<serde_yaml::Value>(contents).unwrap_err();
+        let out = annotate_yaml_error("setup.yml", contents, err);
+        assert!(!out.contains("unquoted"), "should not add hint: {}", out);
+    }
+
+    #[test]
+    fn test_annotate_yaml_error_no_hint_when_line_not_templated() {
+        let contents = "- name: x\n  chdir: {key: val}\n";
+        #[derive(serde::Deserialize, Debug)]
+        struct S {
+            #[allow(dead_code)]
+            name: String,
+            #[allow(dead_code)]
+            chdir: String,
+        }
+        let err = serde_yaml::from_str::<Vec<S>>(contents).unwrap_err();
+        let out = annotate_yaml_error("setup.yml", contents, err);
+        assert!(!out.contains("unquoted"), "should not add hint: {}", out);
     }
 }

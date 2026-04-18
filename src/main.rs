@@ -25,6 +25,18 @@ struct TargetHost {
     ssh_key_path: Option<String>,
 }
 
+impl TargetHost {
+    fn resolve(&self, vars: &IndexMap<String, Value>) -> Self {
+        TargetHost {
+            host: utils::replace_placeholders(&self.host, vars),
+            port: self.port,
+            user: self.user.as_deref().map(|s| utils::replace_placeholders(s, vars)),
+            password: self.password.as_deref().map(|s| utils::replace_placeholders(s, vars)),
+            ssh_key_path: self.ssh_key_path.as_deref().map(|s| utils::replace_placeholders(s, vars)),
+        }
+    }
+}
+
 #[derive(Debug, Deserialize)]
 struct Deployment {
     name: String,
@@ -168,7 +180,7 @@ fn process_tasks(
                 );
                 let include_file_path = deploy_file_dir.join(include_file);
                 let included_tasks =
-                    modules::include_tasks::process(include_file_path.to_str().unwrap())?;
+                    modules::include_tasks::process(include_file_path.to_str().unwrap());
                 process_tasks(
                     &included_tasks,
                     is_localhost,
@@ -203,8 +215,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .short('e')
                 .long("extra-vars")
                 .value_name("VARS")
-                .help("Set additional variables as key=value, JSON, or @file")
-                .num_args(1),
+                .help("Set additional variables as key=value, JSON, or @file. Can be specified multiple times.")
+                .num_args(1)
+                .action(clap::ArgAction::Append),
         )
         .arg(
             Arg::new("server_file")
@@ -217,24 +230,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .get_matches();
 
     let deploy_file = matches.get_one::<String>("deploy_file").unwrap();
-    let extra_vars = matches.get_one::<String>("extra_vars").map(|s| s.as_str());
+    let extra_vars_list: Vec<&str> = matches
+        .get_many::<String>("extra_vars")
+        .unwrap_or_default()
+        .map(|s| s.as_str())
+        .collect();
     let default_server_file = "servers.yml".to_string();
     let server_file = matches
         .get_one::<String>("server_file")
         .unwrap_or(&default_server_file);
 
-    let server_config: ServerConfig = utils::read_yaml(server_file)?;
-    let deployment_docs: Vec<Vec<Deployment>> = utils::read_yaml_multi(deploy_file)?;
+    let server_config: ServerConfig = utils::read_yaml(server_file);
+    let deployment_docs: Vec<Vec<Deployment>> = utils::read_yaml_multi(deploy_file);
     let deployments = deployment_docs.into_iter().flatten().collect::<Vec<_>>();
 
     let mut vars_map: IndexMap<String, Value> = IndexMap::new();
 
-    if let Some(extra_vars) = extra_vars {
+    for extra_vars in &extra_vars_list {
         if extra_vars.starts_with('@') {
             let extra_vars_file = &extra_vars[1..];
             let extra_vars_path = Path::new(extra_vars_file);
             if extra_vars_path.exists() {
-                let yaml_vars: IndexMap<String, Value> = utils::read_yaml(extra_vars_file)?;
+                let yaml_vars: IndexMap<String, Value> = utils::read_yaml(extra_vars_file);
                 vars_map.extend(yaml_vars);
             } else {
                 eprintln!(
@@ -288,6 +305,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let mut become_password: Option<String> = None;
 
             if let Some(target_host) = server_config.hosts.get(host) {
+                let target_host = target_host.resolve(&vars_map);
                 let is_localhost = target_host.host == "localhost";
                 let session = if !is_localhost {
                     let port = target_host.port.unwrap_or(22); // Use default port 22 if not provided
