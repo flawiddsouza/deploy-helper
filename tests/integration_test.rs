@@ -4,40 +4,42 @@ use std::sync::Once;
 
 static INIT: Once = Once::new();
 
-struct DockerGuard;
-
-impl Drop for DockerGuard {
-    fn drop(&mut self) {
-        stop_docker_container();
-    }
+fn build_docker_image() {
+    let output = Command::new("docker")
+        .args(&["build", "-t", "deploy-helper-test", "tests/"])
+        .output()
+        .expect("Failed to build Docker image");
+    assert!(
+        output.status.success(),
+        "Docker build failed:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
 
 fn start_docker_container() {
+    let _ = Command::new("docker")
+        .args(&["stop", "ssh_test_server"])
+        .output();
+
     let start_output = Command::new("docker")
         .args(&[
             "run",
             "-d",
             "--rm",
             "-p",
-            "2222:2222",
+            "2222:22",
             "--name",
             "ssh_test_server",
-            "-e",
-            "USER_NAME=root",
-            "-e",
-            "USER_PASSWD=password",
-            "forumi0721/alpine-sshd:x64",
+            "deploy-helper-test",
         ])
         .output()
         .expect("Failed to start Docker container");
 
-    assert!(start_output.status.success());
-}
-
-fn stop_docker_container() {
-    let _stop_output = Command::new("docker")
-        .args(&["stop", "ssh_test_server"])
-        .output();
+    assert!(
+        start_output.status.success(),
+        "Docker run failed:\n{}",
+        String::from_utf8_lossy(&start_output.stderr)
+    );
 }
 
 fn run_test(yml_file: &str, should_fail: bool, extra_vars: &str, inventory_file: &str) {
@@ -72,11 +74,12 @@ fn run_test(yml_file: &str, should_fail: bool, extra_vars: &str, inventory_file:
     assert_eq!(full_output, expected_output);
 }
 
-fn setup() -> DockerGuard {
+fn setup() {
     INIT.call_once(|| {
+        build_docker_image();
         start_docker_container();
+        std::thread::sleep(std::time::Duration::from_secs(3));
     });
-    DockerGuard
 }
 
 fn run_tests_for_both_inventories(yml_file: &str, should_fail: bool, extra_vars: &str) {
@@ -248,5 +251,82 @@ fn use_vars_in_run_name() {
         "test-ymls/use-vars-in-run-name.yml",
         false,
         "@test-ymls/use-vars-in-run-name.vars.yml",
+    );
+}
+
+#[test]
+fn become_nopasswd() {
+    setup();
+    run_test(
+        "test-ymls/become-nopasswd.yml",
+        false,
+        "become_password=",
+        "tests/servers/become-nopass.yml",
+    );
+}
+
+#[test]
+fn become_with_password() {
+    setup();
+    run_test(
+        "test-ymls/become-with-password.yml",
+        false,
+        "become_password=password",
+        "tests/servers/become-withpass.yml",
+    );
+}
+
+#[test]
+fn become_su_nopasswd() {
+    setup();
+    run_test(
+        "test-ymls/become-su-nopasswd.yml",
+        false,
+        "",
+        "tests/servers/become-root.yml",
+    );
+}
+
+#[test]
+fn become_invalid_method_error() {
+    setup();
+    run_test(
+        "test-ymls/become-invalid-method-error.yml",
+        true,
+        "",
+        "tests/servers/local.yml",
+    );
+}
+
+#[test]
+fn become_su_with_password() {
+    setup();
+    run_test(
+        "test-ymls/become-su-with-password.yml",
+        false,
+        "become_password=password",
+        "tests/servers/become-withpass.yml",
+    );
+}
+
+#[test]
+fn become_doas() {
+    setup();
+    run_test(
+        "test-ymls/become-doas.yml",
+        false,
+        "",
+        "tests/servers/become-doas.yml",
+    );
+}
+
+#[test]
+fn become_doas_with_password_error() {
+    setup();
+    run_test(
+        "test-ymls/become-doas-with-password-error.yml",
+        true,
+        "become_password=secret",
+        "tests/servers/local.yml",
     );
 }

@@ -1,0 +1,7 @@
+- name: Test become invalid method
+  hosts: test
+  tasks:
+    - name: Run with invalid method
+      become: true
+      become_method: pkexec
+      shell: whoami

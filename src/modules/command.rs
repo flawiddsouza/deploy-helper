@@ -69,16 +69,25 @@ pub fn process(
     register: Option<&String>,
     login_shell: bool,
     vars_map: &mut IndexMap<String, Value>,
+    become_enabled: bool,
+    become_method: &str,
+    become_password: Option<&str>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     for cmd in commands {
         let substituted_cmd = utils::replace_placeholders(&cmd, vars_map);
         println!("{}", format!("> {}", substituted_cmd).magenta());
 
+        let exec_cmd = if become_enabled {
+            utils::wrap_become_command(&substituted_cmd, become_method, become_password)
+        } else {
+            substituted_cmd
+        };
+
         let display_output = register.is_none();
         handle_command_execution(
             is_localhost,
             session,
-            &substituted_cmd,
+            &exec_cmd,
             use_shell,
             display_output,
             task_chdir,

@@ -1,0 +1,4 @@
+Starting deployment: Test become invalid method
+
+Executing task: Run with invalid method
+Error: "Unsupported become_method 'pkexec'. Supported values: sudo, doas, su."

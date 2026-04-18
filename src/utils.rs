@@ -14,6 +14,29 @@ fn shell_escape(s: &str) -> String {
     format!("'{}'", s.replace('\'', "'\\''"))
 }
 
+pub fn wrap_become_command(command: &str, method: &str, password: Option<&str>) -> String {
+    if method == "su" {
+        if let Some(pw) = password {
+            format!(
+                "printf '%s\\n' {} | su -c {}",
+                shell_escape(pw),
+                shell_escape(command)
+            )
+        } else {
+            format!("su -c {}", shell_escape(command))
+        }
+    } else if let Some(pw) = password {
+        format!(
+            "printf '%s\\n' {} | {} -S -p '' sh -c {}",
+            shell_escape(pw),
+            method,
+            shell_escape(command)
+        )
+    } else {
+        format!("{} sh -c {}", method, shell_escape(command))
+    }
+}
+
 pub fn replace_placeholders(msg: &str, vars: &IndexMap<String, Value>) -> String {
     let mut env = Environment::new();
     env.set_undefined_behavior(UndefinedBehavior::Strict);
@@ -441,5 +464,46 @@ mod tests {
             split_commands(input),
             vec!["cat << 'EOF' > /tmp/file\n    indented\n        more\nEOF"]
         );
+    }
+
+    // wrap_become_command
+
+    #[test]
+    fn test_wrap_become_sudo_with_password() {
+        let result = wrap_become_command("nginx -t && systemctl reload nginx", "sudo", Some("secret"));
+        assert_eq!(
+            result,
+            "printf '%s\\n' 'secret' | sudo -S -p '' sh -c 'nginx -t && systemctl reload nginx'"
+        );
+    }
+
+    #[test]
+    fn test_wrap_become_sudo_nopasswd() {
+        let result = wrap_become_command("nginx -t", "sudo", None);
+        assert_eq!(result, "sudo sh -c 'nginx -t'");
+    }
+
+    #[test]
+    fn test_wrap_become_doas_nopasswd() {
+        let result = wrap_become_command("nginx -t", "doas", None);
+        assert_eq!(result, "doas sh -c 'nginx -t'");
+    }
+
+    #[test]
+    fn test_wrap_become_password_with_special_chars() {
+        let result = wrap_become_command("id", "sudo", Some("p@ss'word"));
+        assert_eq!(result, "printf '%s\\n' 'p@ss'\\''word' | sudo -S -p '' sh -c 'id'");
+    }
+
+    #[test]
+    fn test_wrap_become_su_with_password() {
+        let result = wrap_become_command("nginx -t", "su", Some("secret"));
+        assert_eq!(result, "printf '%s\\n' 'secret' | su -c 'nginx -t'");
+    }
+
+    #[test]
+    fn test_wrap_become_su_nopasswd() {
+        let result = wrap_become_command("nginx -t", "su", None);
+        assert_eq!(result, "su -c 'nginx -t'");
     }
 }

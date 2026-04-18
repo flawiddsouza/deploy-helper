@@ -1,0 +1,7 @@
+- name: Test become su nopasswd
+  hosts: test
+  tasks:
+    - name: Run whoami via su
+      become: true
+      become_method: su
+      shell: whoami

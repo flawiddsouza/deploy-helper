@@ -1,0 +1,6 @@
+Starting deployment: Test become nopasswd
+
+Executing task: Run whoami as root
+> whoami
+root
+

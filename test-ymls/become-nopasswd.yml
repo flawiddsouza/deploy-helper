@@ -1,0 +1,6 @@
+- name: Test become nopasswd
+  hosts: test
+  tasks:
+    - name: Run whoami as root
+      become: true
+      shell: whoami

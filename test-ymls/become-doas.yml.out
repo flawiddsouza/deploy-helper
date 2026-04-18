@@ -1,0 +1,6 @@
+Starting deployment: Test become doas
+
+Executing task: Run whoami via doas
+> whoami
+root
+

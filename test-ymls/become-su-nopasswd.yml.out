@@ -1,0 +1,6 @@
+Starting deployment: Test become su nopasswd
+
+Executing task: Run whoami via su
+> whoami
+root
+

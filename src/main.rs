@@ -43,6 +43,7 @@ fn process_tasks(
     dep_login_shell: bool,
     vars_map: &mut IndexMap<String, Value>,
     deploy_file_dir: &Path,
+    become_password: &mut Option<String>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     for task in tasks {
         let task_name = utils::replace_placeholders(&task.name, vars_map);
@@ -70,6 +71,40 @@ fn process_tasks(
 
         let use_login_shell = task.login_shell.unwrap_or(dep_login_shell);
 
+        let task_become = task.r#become.unwrap_or(false);
+        let task_become_method = task.become_method.as_deref().unwrap_or("sudo").to_string();
+
+        // Validate become_method early before asking for password
+        if task_become && !matches!(task_become_method.as_str(), "sudo" | "doas" | "su") {
+            return Err(format!(
+                "Unsupported become_method '{}'. Supported values: sudo, doas, su.",
+                task_become_method
+            )
+            .into());
+        }
+
+        if task_become {
+            if task_become_method == "doas" {
+                if vars_map
+                    .get("become_password")
+                    .and_then(|v| v.as_str())
+                    .filter(|s| !s.is_empty())
+                    .is_some()
+                {
+                    return Err(
+                        "become_method 'doas' does not support password via become_password (doas requires a tty). Configure passwordless doas or use sudo/su instead."
+                            .into(),
+                    );
+                }
+            } else if become_password.is_none() {
+                if let Some(pw) = vars_map.get("become_password").and_then(|v| v.as_str()) {
+                    *become_password = Some(pw.to_string());
+                } else {
+                    *become_password = Some(rpassword::prompt_password("BECOME password: ")?);
+                }
+            }
+        }
+
         // Debug print to verify vars_map
         // println!("Vars map: {:?}", vars_map);
 
@@ -86,6 +121,12 @@ fn process_tasks(
                 modules::debug::process(debug, vars_map);
             }
 
+            let task_become_password = if task_become_method == "doas" {
+                None
+            } else {
+                become_password.as_deref().filter(|s| !s.is_empty())
+            };
+
             if let Some(shell_command) = &task.shell {
                 let commands = utils::split_commands(shell_command);
                 modules::command::process(
@@ -97,6 +138,9 @@ fn process_tasks(
                     task.register.as_ref(),
                     use_login_shell,
                     vars_map,
+                    task_become,
+                    &task_become_method,
+                    task_become_password,
                 )?;
             }
 
@@ -111,6 +155,9 @@ fn process_tasks(
                     task.register.as_ref(),
                     use_login_shell,
                     vars_map,
+                    task_become,
+                    &task_become_method,
+                    task_become_password,
                 )?;
             }
 
@@ -130,6 +177,7 @@ fn process_tasks(
                     use_login_shell,
                     vars_map,
                     deploy_file_dir,
+                    become_password,
                 )?;
             }
         }
@@ -237,6 +285,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 println!("{}", format!("Processing host: {}\n", host).blue());
             }
 
+            let mut become_password: Option<String> = None;
+
             if let Some(target_host) = server_config.hosts.get(host) {
                 let is_localhost = target_host.host == "localhost";
                 let session = if !is_localhost {
@@ -267,6 +317,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     dep.login_shell.unwrap_or(false),
                     &mut vars_map,
                     deploy_file_dir,
+                    &mut become_password,
                 )?;
             } else {
                 eprintln!(

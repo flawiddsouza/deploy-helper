@@ -1,0 +1,7 @@
+- name: Test become doas
+  hosts: test
+  tasks:
+    - name: Run whoami via doas
+      become: true
+      become_method: doas
+      shell: whoami
