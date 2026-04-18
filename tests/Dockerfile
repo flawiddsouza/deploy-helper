@@ -1,6 +1,6 @@
 FROM alpine:3.19
 
-RUN apk add --no-cache openssh sudo doas
+RUN apk add --no-cache openssh sudo doas util-linux-login
 
 RUN ssh-keygen -A
 

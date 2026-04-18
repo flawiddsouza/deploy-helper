@@ -303,7 +303,7 @@ fn become_su_nopasswd() {
     run_test(
         "test-ymls/become-su-nopasswd.yml",
         false,
-        &[],
+        &["become_password="],
         "tests/servers/become-root.yml",
     );
 }
