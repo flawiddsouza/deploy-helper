@@ -140,12 +140,12 @@ fn process_tasks(
             };
 
             if let Some(shell_command) = &task.shell {
-                let commands = utils::split_commands(shell_command);
-                modules::command::process(
-                    commands,
+                let display_segments = utils::split_commands(shell_command);
+                modules::command::process_shell_block(
+                    shell_command,
+                    display_segments,
                     is_localhost,
                     session,
-                    true,
                     task_chdir.as_deref(),
                     task.register.as_ref(),
                     use_login_shell,
@@ -158,11 +158,10 @@ fn process_tasks(
 
             if let Some(command) = &task.command {
                 let commands = utils::split_commands(command);
-                modules::command::process(
+                modules::command::process_command(
                     commands,
                     is_localhost,
                     session,
-                    false,
                     task_chdir.as_deref(),
                     task.register.as_ref(),
                     use_login_shell,

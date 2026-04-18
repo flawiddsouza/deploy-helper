@@ -139,6 +139,12 @@ fn dont_run_2nd_deploy_if_1st_fails() {
 }
 
 #[test]
+fn shell_block_shares_state_across_lines() {
+    setup();
+    run_tests_for_both_inventories("test-ymls/shell-block-shares-state.yml", false, &[]);
+}
+
+#[test]
 fn use_output_of_one_task_shell_in_another_task_shell() {
     setup();
     run_tests_for_both_inventories(

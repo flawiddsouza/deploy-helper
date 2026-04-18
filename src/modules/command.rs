@@ -60,11 +60,58 @@ fn handle_command_execution(
     Ok(())
 }
 
-pub fn process(
+// Runs a multi-line `shell:` block as a single shell invocation so shell
+// state (variables, cwd, traps, shell options) is shared across lines. The
+// split segments are used only for display — each is echoed with `> ` before
+// execution starts. `set -e` preserves the previous per-line stop-on-error
+// behavior.
+pub fn process_shell_block(
+    source: &str,
+    display_segments: Vec<String>,
+    is_localhost: bool,
+    session: Option<&Session>,
+    task_chdir: Option<&str>,
+    register: Option<&String>,
+    login_shell: bool,
+    vars_map: &mut IndexMap<String, Value>,
+    become_enabled: bool,
+    become_method: &str,
+    become_password: Option<&str>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    for seg in &display_segments {
+        let substituted = utils::replace_placeholders(seg, vars_map);
+        println!("{}", format!("> {}", substituted).magenta());
+    }
+
+    let substituted_source = utils::replace_placeholders(source, vars_map);
+    let exec_source = format!("set -e\n{}", substituted_source);
+
+    let exec_cmd = if become_enabled {
+        utils::wrap_become_command(&exec_source, become_method, become_password)
+    } else {
+        exec_source
+    };
+
+    let display_output = register.is_none();
+    handle_command_execution(
+        is_localhost,
+        session,
+        &exec_cmd,
+        true,
+        display_output,
+        task_chdir,
+        register,
+        login_shell,
+        vars_map,
+    )
+}
+
+// Runs a `command:` task — each line is a standalone command exec'd directly
+// (no shell interpretation, so no state sharing between lines).
+pub fn process_command(
     commands: Vec<String>,
     is_localhost: bool,
     session: Option<&Session>,
-    use_shell: bool,
     task_chdir: Option<&str>,
     register: Option<&String>,
     login_shell: bool,
@@ -88,7 +135,7 @@ pub fn process(
             is_localhost,
             session,
             &exec_cmd,
-            use_shell,
+            false,
             display_output,
             task_chdir,
             register,

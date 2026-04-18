@@ -1,0 +1,21 @@
+- name: Test shell block shares state across lines
+  hosts: test
+  tasks:
+    - name: var set on one line is visible on next line
+      shell: |
+        x="hello"
+        echo "value=$x"
+
+    - name: if-branch reads variable set on previous line
+      shell: |
+        existing="present"
+        if [ -z "$existing" ]; then
+          echo "then branch"
+        else
+          echo "else branch"
+        fi
+
+    - name: cwd set by cd persists to next line
+      shell: |
+        cd /tmp
+        pwd

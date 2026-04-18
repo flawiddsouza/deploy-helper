@@ -1,0 +1,21 @@
+Starting deployment: Test shell block shares state across lines
+
+Executing task: var set on one line is visible on next line
+> x="hello"
+> echo "value=$x"
+value=hello
+
+Executing task: if-branch reads variable set on previous line
+> existing="present"
+> if [ -z "$existing" ]; then
+echo "then branch"
+else
+echo "else branch"
+fi
+else branch
+
+Executing task: cwd set by cd persists to next line
+> cd /tmp
+> pwd
+/tmp
+
