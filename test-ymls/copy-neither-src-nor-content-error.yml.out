@@ -1,0 +1,4 @@
+Starting deployment: Copy neither src nor content
+
+Executing task: Bad copy task
+Error: "Task 'Bad copy task': copy requires exactly one of src or content (neither was set)"

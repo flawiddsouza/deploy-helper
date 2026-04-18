@@ -1,0 +1,14 @@
+- name: Copy with content
+  hosts: test
+  vars:
+    flavor: chocolate
+  tasks:
+    - name: Write file with inline content
+      copy:
+        content: |
+          flavor={{ flavor }}
+          fixed=value
+        dest: /tmp/deploy-helper-test-copy-content-basic
+
+    - name: Read it back
+      shell: cat /tmp/deploy-helper-test-copy-content-basic

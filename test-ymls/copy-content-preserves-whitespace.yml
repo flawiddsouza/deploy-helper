@@ -1,0 +1,17 @@
+- name: Copy content preserves whitespace
+  hosts: test
+  tasks:
+    - name: Write multi-line content
+      copy:
+        content: |
+          server {
+              listen 80;
+
+              location / {
+                  proxy_pass http://127.0.0.1:3000;
+              }
+          }
+        dest: /tmp/deploy-helper-test-copy-whitespace
+
+    - name: Read it back
+      shell: cat /tmp/deploy-helper-test-copy-whitespace

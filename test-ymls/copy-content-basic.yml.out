@@ -1,0 +1,10 @@
+Starting deployment: Copy with content
+
+Executing task: Write file with inline content
+> [copy] /tmp/deploy-helper-test-copy-content-basic (28 bytes)
+
+Executing task: Read it back
+> cat /tmp/deploy-helper-test-copy-content-basic
+flavor=chocolate
+fixed=value
+

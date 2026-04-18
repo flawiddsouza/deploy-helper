@@ -1,0 +1,18 @@
+- name: Template with become
+  hosts: test
+  vars:
+    owner: root
+  tasks:
+    - name: Render template as root
+      become: true
+      template:
+        src: template-with-become.src.j2
+        dest: /tmp/deploy-helper-test-template-become
+
+    - name: Verify file is owned by root
+      become: true
+      shell: stat -c '%U' /tmp/deploy-helper-test-template-become
+
+    - name: Read content
+      become: true
+      shell: cat /tmp/deploy-helper-test-template-become

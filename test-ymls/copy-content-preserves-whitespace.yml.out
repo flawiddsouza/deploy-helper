@@ -1,0 +1,15 @@
+Starting deployment: Copy content preserves whitespace
+
+Executing task: Write multi-line content
+> [copy] /tmp/deploy-helper-test-copy-whitespace (91 bytes)
+
+Executing task: Read it back
+> cat /tmp/deploy-helper-test-copy-whitespace
+server {
+    listen 80;
+
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+    }
+}
+

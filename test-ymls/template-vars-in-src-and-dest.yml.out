@@ -1,0 +1,9 @@
+Starting deployment: Template vars in src and dest
+
+Executing task: Render
+> [template] /tmp/deploy-helper-test-template-vars-in-src-and-dest (14 bytes)
+
+Executing task: Read
+> cat /tmp/deploy-helper-test-template-vars-in-src-and-dest
+flavor=vanilla
+

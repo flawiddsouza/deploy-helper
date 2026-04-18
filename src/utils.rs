@@ -8,6 +8,7 @@ use ssh2::Session;
 use std::fs;
 use std::io::prelude::*;
 use std::net::TcpStream;
+use std::path::{Path, PathBuf};
 use std::process::{exit, Command, Stdio};
 
 fn shell_escape(s: &str) -> String {
@@ -293,6 +294,15 @@ fn read_file_or_exit(filename: &str) -> String {
     })
 }
 
+pub fn resolve_src_path(deploy_file_dir: &Path, src: &str) -> PathBuf {
+    let p = Path::new(src);
+    if p.is_absolute() {
+        p.to_path_buf()
+    } else {
+        deploy_file_dir.join(p)
+    }
+}
+
 pub fn read_yaml<T>(filename: &str) -> T
 where
     T: for<'de> Deserialize<'de>,
@@ -506,6 +516,130 @@ pub fn execute_local_command(
     let exit_status = child.wait()?.code().unwrap_or(-1);
 
     Ok((stdout_str, stderr_str, exit_status))
+}
+
+pub fn write_to_target(
+    bytes: &[u8],
+    dest: &str,
+    is_localhost: bool,
+    session: Option<&Session>,
+    become_enabled: bool,
+    become_method: &str,
+    become_password: Option<&str>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if is_localhost {
+        if become_enabled {
+            let inner = format!("cat > {}", shell_escape(dest));
+            let wrapped = wrap_become_command(&inner, become_method, become_password);
+            let mut cmd = Command::new("sh");
+            cmd.arg("-c").arg(&wrapped);
+            cmd.stdin(Stdio::piped());
+            cmd.stdout(Stdio::piped());
+            cmd.stderr(Stdio::piped());
+            let mut child = cmd.spawn().map_err(|e| {
+                format!("Failed to spawn write process: {}", e)
+            })?;
+            {
+                let stdin = child
+                    .stdin
+                    .as_mut()
+                    .ok_or("Failed to open stdin for write process")?;
+                stdin.write_all(bytes).map_err(|e| {
+                    format!("Failed to write to {}: {}", dest, e)
+                })?;
+            }
+            let output = child.wait_with_output().map_err(|e| {
+                format!("Failed to wait for write process: {}", e)
+            })?;
+            if !output.status.success() {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                return Err(format!(
+                    "Failed to write {}: exit {}: {}",
+                    dest,
+                    output.status.code().unwrap_or(-1),
+                    stderr.trim()
+                )
+                .into());
+            }
+            return Ok(());
+        }
+        // Use sh to write the file so that path resolution (e.g. /tmp on Windows/MSYS2)
+        // is handled by the same shell that runs subsequent shell tasks, keeping paths
+        // consistent across all local operations.
+        let mut child = Command::new("sh")
+            .arg("-c")
+            .arg(format!("cat > {}", shell_escape(dest)))
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|e| format!("Failed to spawn sh for write to {}: {}", dest, e))?;
+        {
+            let stdin = child.stdin.take().ok_or("Failed to open stdin for write")?;
+            let mut stdin = stdin;
+            stdin.write_all(bytes).map_err(|e| format!("Failed to write bytes to {}: {}", dest, e))?;
+        }
+        let status = child.wait().map_err(|e| format!("Failed to wait on write process for {}: {}", dest, e))?;
+        if !status.success() {
+            return Err(format!("Failed to write {}: sh exited with status {}", dest, status).into());
+        }
+        Ok(())
+    } else {
+        let session = session.ok_or("write_to_target: remote target requires session")?;
+        if become_enabled {
+            let nanos = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0);
+            let tmp_path = format!(
+                "/tmp/deploy-helper-{}-{}",
+                nanos,
+                std::process::id()
+            );
+
+            let sftp = session.sftp().map_err(|e| {
+                format!("Failed to open SFTP session: {}", e)
+            })?;
+            {
+                let mut remote = sftp.create(Path::new(&tmp_path)).map_err(|e| {
+                    format!("Failed to write {}: {}", tmp_path, e)
+                })?;
+                remote.write_all(bytes).map_err(|e| {
+                    format!("Failed to write {}: {}", tmp_path, e)
+                })?;
+            }
+
+            let inner = format!(
+                "trap 'rm -f {tmp}' EXIT; cp {tmp} {dst}",
+                tmp = shell_escape(&tmp_path),
+                dst = shell_escape(dest)
+            );
+            let wrapped = wrap_become_command(&inner, become_method, become_password);
+
+            let (_stdout, stderr, code) =
+                execute_ssh_command(session, &wrapped, true, false, None, false)?;
+            if code != 0 {
+                return Err(format!(
+                    "Failed to write {}: exit {}: {}",
+                    dest,
+                    code,
+                    stderr.trim()
+                )
+                .into());
+            }
+            return Ok(());
+        }
+        let sftp = session.sftp().map_err(|e| {
+            format!("Failed to open SFTP session: {}", e)
+        })?;
+        let mut remote = sftp.create(Path::new(dest)).map_err(|e| {
+            format!("Failed to write {}: {}", dest, e)
+        })?;
+        remote.write_all(bytes).map_err(|e| {
+            format!("Failed to write {}: {}", dest, e)
+        })?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -830,5 +964,21 @@ mod tests {
         let err = serde_yaml::from_str::<Vec<S>>(contents).unwrap_err();
         let out = annotate_yaml_error("setup.yml", contents, err);
         assert!(!out.contains("unquoted"), "should not add hint: {}", out);
+    }
+
+    // resolve_src_path
+
+    #[test]
+    fn test_resolve_src_path_relative() {
+        let dir = Path::new("/some/deploy");
+        let resolved = resolve_src_path(dir, "templates/x.j2");
+        assert_eq!(resolved, PathBuf::from("/some/deploy/templates/x.j2"));
+    }
+
+    #[test]
+    fn test_resolve_src_path_absolute_passes_through() {
+        let dir = Path::new("/some/deploy");
+        let resolved = resolve_src_path(dir, "/etc/x.conf");
+        assert_eq!(resolved, PathBuf::from("/etc/x.conf"));
     }
 }

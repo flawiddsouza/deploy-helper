@@ -1,0 +1,6 @@
+- name: Copy neither src nor content
+  hosts: test
+  tasks:
+    - name: Bad copy task
+      copy:
+        dest: /tmp/deploy-helper-test-copy-neither

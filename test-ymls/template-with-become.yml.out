@@ -1,0 +1,13 @@
+Starting deployment: Template with become
+
+Executing task: Render template as root
+> [template] /tmp/deploy-helper-test-template-become (20 bytes)
+
+Executing task: Verify file is owned by root
+> stat -c '%U' /tmp/deploy-helper-test-template-become
+root
+
+Executing task: Read content
+> cat /tmp/deploy-helper-test-template-become
+owner=root
+mode=test

@@ -1,0 +1,11 @@
+Starting deployment: Copy with src
+
+Executing task: Copy static file
+> [copy] /tmp/deploy-helper-test-copy-with-src (44 bytes)
+
+Executing task: Read it back
+> cat /tmp/deploy-helper-test-copy-with-src
+static
+content
+{{ this_should_not_render }}
+

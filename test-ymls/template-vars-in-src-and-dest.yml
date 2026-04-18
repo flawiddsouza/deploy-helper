@@ -1,0 +1,14 @@
+- name: Template vars in src and dest
+  hosts: test
+  vars:
+    flavor: vanilla
+    src_name: template-vars-in-src-and-dest.src.j2
+    dest_name: template-vars-in-src-and-dest
+  tasks:
+    - name: Render
+      template:
+        src: "{{ src_name }}"
+        dest: "/tmp/deploy-helper-test-{{ dest_name }}"
+
+    - name: Read
+      shell: cat /tmp/deploy-helper-test-template-vars-in-src-and-dest

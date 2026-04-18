@@ -41,6 +41,10 @@ cargo install --path .
 
 Builds and installs the `deploy-helper` binary to your Cargo bin directory, making it available globally.
 
+## Deployment YAML
+
+See [docs/deployment-yaml.md](docs/deployment-yaml.md).
+
 ## Testing
 
 Tests are integration tests located in `tests/integration_test.rs`. Each test runs the binary against a YAML deployment file in `test-ymls/` and compares the output to a corresponding `.out` file.

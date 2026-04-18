@@ -172,6 +172,35 @@ fn process_tasks(
                 )?;
             }
 
+            if let Some(spec) = &task.template {
+                modules::template::process(
+                    spec,
+                    deploy_file_dir,
+                    is_localhost,
+                    session,
+                    vars_map,
+                    task_become,
+                    &task_become_method,
+                    task_become_password,
+                    task.register.as_ref(),
+                )?;
+            }
+
+            if let Some(spec) = &task.copy {
+                modules::copy::process(
+                    &task_name,
+                    spec,
+                    deploy_file_dir,
+                    is_localhost,
+                    session,
+                    vars_map,
+                    task_become,
+                    &task_become_method,
+                    task_become_password,
+                    task.register.as_ref(),
+                )?;
+            }
+
             if let Some(include_file) = &task.include_tasks {
                 println!(
                     "{}",

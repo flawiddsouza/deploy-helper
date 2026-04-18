@@ -27,4 +27,19 @@ pub struct Task {
     pub login_shell: Option<bool>,
     pub r#become: Option<bool>,
     pub become_method: Option<String>,
+    pub template: Option<TemplateSpec>,
+    pub copy: Option<CopySpec>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct TemplateSpec {
+    pub src: String,
+    pub dest: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CopySpec {
+    pub src: Option<String>,
+    pub content: Option<String>,
+    pub dest: String,
 }

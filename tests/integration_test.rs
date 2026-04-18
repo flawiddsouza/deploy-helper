@@ -383,3 +383,92 @@ fn servers_yml_var_support_remote_fields() {
         "tests/servers/remote-templated.yml",
     );
 }
+
+#[test]
+fn copy_content_basic() {
+    setup();
+    run_tests_for_both_inventories("test-ymls/copy-content-basic.yml", false, &[]);
+}
+
+#[test]
+fn template_basic() {
+    setup();
+    run_tests_for_both_inventories("test-ymls/template-basic.yml", false, &[]);
+}
+
+#[test]
+fn copy_with_src() {
+    setup();
+    run_tests_for_both_inventories("test-ymls/copy-with-src.yml", false, &[]);
+}
+
+#[test]
+fn copy_both_src_and_content_error() {
+    setup();
+    run_tests_for_both_inventories(
+        "test-ymls/copy-both-src-and-content-error.yml",
+        true,
+        &[],
+    );
+}
+
+#[test]
+fn copy_neither_src_nor_content_error() {
+    setup();
+    run_tests_for_both_inventories(
+        "test-ymls/copy-neither-src-nor-content-error.yml",
+        true,
+        &[],
+    );
+}
+
+#[test]
+fn template_missing_src_error() {
+    setup();
+    run_tests_for_both_inventories(
+        "test-ymls/template-missing-src-error.yml",
+        true,
+        &[],
+    );
+}
+
+#[test]
+fn copy_missing_src_error() {
+    setup();
+    run_tests_for_both_inventories(
+        "test-ymls/copy-missing-src-error.yml",
+        true,
+        &[],
+    );
+}
+
+#[test]
+fn template_with_become() {
+    setup();
+    run_test(
+        "test-ymls/template-with-become.yml",
+        false,
+        &["become_password="],
+        "tests/servers/become-nopass.yml",
+    );
+}
+
+#[test]
+fn template_vars_in_src_and_dest() {
+    setup();
+    run_tests_for_both_inventories(
+        "test-ymls/template-vars-in-src-and-dest.yml",
+        false,
+        &[],
+    );
+}
+
+#[test]
+fn copy_content_preserves_whitespace() {
+    setup();
+    run_tests_for_both_inventories(
+        "test-ymls/copy-content-preserves-whitespace.yml",
+        false,
+        &[],
+    );
+}

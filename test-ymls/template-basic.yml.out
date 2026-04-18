@@ -1,0 +1,10 @@
+Starting deployment: Template basic
+
+Executing task: Render template
+> [template] /tmp/deploy-helper-test-template-basic (27 bytes)
+
+Executing task: Read it back
+> cat /tmp/deploy-helper-test-template-basic
+greeting=hello
+target=world
+

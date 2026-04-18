@@ -1,0 +1,10 @@
+- name: Copy with src
+  hosts: test
+  tasks:
+    - name: Copy static file
+      copy:
+        src: copy-with-src.src
+        dest: /tmp/deploy-helper-test-copy-with-src
+
+    - name: Read it back
+      shell: cat /tmp/deploy-helper-test-copy-with-src

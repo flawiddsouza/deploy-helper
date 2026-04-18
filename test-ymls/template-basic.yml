@@ -1,0 +1,12 @@
+- name: Template basic
+  hosts: test
+  vars:
+    greeting: hello
+  tasks:
+    - name: Render template
+      template:
+        src: template-basic.src.j2
+        dest: /tmp/deploy-helper-test-template-basic
+
+    - name: Read it back
+      shell: cat /tmp/deploy-helper-test-template-basic

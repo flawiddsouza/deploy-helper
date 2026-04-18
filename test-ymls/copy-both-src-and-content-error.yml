@@ -1,0 +1,8 @@
+- name: Copy both src and content
+  hosts: test
+  tasks:
+    - name: Bad copy task
+      copy:
+        src: copy-with-src.src
+        content: also-content
+        dest: /tmp/deploy-helper-test-copy-both

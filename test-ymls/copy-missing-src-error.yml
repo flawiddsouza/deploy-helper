@@ -1,0 +1,7 @@
+- name: Copy missing src
+  hosts: test
+  tasks:
+    - name: Copy missing file
+      copy:
+        src: this-file-does-not-exist
+        dest: /tmp/deploy-helper-test-copy-missing

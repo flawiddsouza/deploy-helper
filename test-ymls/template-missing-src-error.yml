@@ -1,0 +1,7 @@
+- name: Template missing src
+  hosts: test
+  tasks:
+    - name: Render missing template
+      template:
+        src: this-file-does-not-exist.j2
+        dest: /tmp/deploy-helper-test-template-missing
