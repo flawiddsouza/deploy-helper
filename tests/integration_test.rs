@@ -1,3 +1,4 @@
+use expectrl::{process::Healthcheck, Expect, Session};
 use std::fs;
 use std::process::Command;
 use std::sync::Once;
@@ -44,6 +45,34 @@ fn start_docker_container() {
 
 fn run_test(yml_file: &str, should_fail: bool, extra_vars: &[&str], inventory_file: &str) {
     run_test_with_flags(yml_file, should_fail, extra_vars, inventory_file, &[], None);
+}
+
+// Builds a `cargo run --quiet -- <yml_file> --inventory <inventory>` command
+// without stdin/stdout redirection so the process inherits the ConPTY console,
+// which is required for TTY-prompt tests (rpassword reads from CONIN$).
+fn pty_command(yml_file: &str, inventory_file: &str) -> Command {
+    let mut cmd = Command::new("cargo");
+    cmd.args(["run", "--quiet", "--", yml_file, "--inventory", inventory_file]);
+    cmd
+}
+
+// Polls until the session's process exits or the deadline is exceeded.
+fn wait_for_exit<P>(p: &Session<P, P::Stream>, timeout_secs: u64)
+where
+    P: expectrl::process::Process + Healthcheck,
+{
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(timeout_secs);
+    loop {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "process did not exit within {}s",
+            timeout_secs
+        );
+        if !p.is_alive().unwrap_or(true) {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(300));
+    }
 }
 
 fn run_test_with_flags(
@@ -659,6 +688,48 @@ fn step_prompt_y_n_c() {
 }
 
 #[test]
+fn step_prompt_eof_skips_all() {
+    setup();
+    run_test_with_flags(
+        "test-ymls/step-eof.yml",
+        false,
+        &[],
+        "tests/servers/local.yml",
+        &["--step"],
+        Some(""),
+    );
+    run_test_with_flags(
+        "test-ymls/step-eof.yml",
+        false,
+        &[],
+        "tests/servers/remote.yml",
+        &["--step"],
+        Some(""),
+    );
+}
+
+#[test]
+fn step_prompt_unknown_reprompts() {
+    setup();
+    run_test_with_flags(
+        "test-ymls/step-reprompt.yml",
+        false,
+        &[],
+        "tests/servers/local.yml",
+        &["--step"],
+        Some("?\ny\nn\n"),
+    );
+    run_test_with_flags(
+        "test-ymls/step-reprompt.yml",
+        false,
+        &[],
+        "tests/servers/remote.yml",
+        &["--step"],
+        Some("?\ny\nn\n"),
+    );
+}
+
+#[test]
 fn list_tasks_prints_tree_with_effective_tags() {
     setup();
     run_test_with_flags(
@@ -716,4 +787,20 @@ fn list_tasks_templates_deployment_vars_in_names() {
         &["--list-tasks"],
         None,
     );
+}
+
+
+#[test]
+fn become_password_prompted_via_tty() {
+    setup();
+    let mut p = Session::spawn(pty_command(
+        "test-ymls/become-with-password.yml",
+        "tests/servers/become-withpass.yml",
+    ))
+    .expect("spawn PTY session");
+    // The trailing space in "BECOME password: " is re-encoded as ESC[1C by
+    // the ConHost, so match without it.
+    p.expect("BECOME password:").expect("password prompt appeared on TTY");
+    p.send_line("password").expect("send password");
+    wait_for_exit(&p, 30);
 }

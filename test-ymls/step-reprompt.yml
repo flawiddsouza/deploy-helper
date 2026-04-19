@@ -1,0 +1,8 @@
+- name: Step reprompt test
+  hosts: test
+  tasks:
+    - name: Alpha
+      command: echo alpha
+
+    - name: Beta
+      command: echo beta

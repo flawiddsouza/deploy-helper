@@ -1,0 +1,8 @@
+Starting deployment: Step reprompt test
+
+Perform task: Alpha (N)o/(y)es/(c)ontinue: Perform task: Alpha (N)o/(y)es/(c)ontinue: Executing task: Alpha
+> echo alpha
+alpha
+
+Perform task: Beta (N)o/(y)es/(c)ontinue: Skipping task: Beta (step)
+
