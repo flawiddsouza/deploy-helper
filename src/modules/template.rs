@@ -24,11 +24,10 @@ pub fn process(
 
     let resolved_src = utils::resolve_src_path(deploy_file_dir, &src);
 
-    let raw = fs::read(&resolved_src).map_err(|e| {
+    let raw = fs::read(&resolved_src).map_err(|_| {
         format!(
-            "Template source not found: {}: {}",
-            resolved_src.display(),
-            e
+            "Template source not found: {}",
+            resolved_src.to_string_lossy().replace('\\', "/")
         )
     })?;
     let text = std::str::from_utf8(&raw).map_err(|_| {

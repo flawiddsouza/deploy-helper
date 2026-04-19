@@ -38,8 +38,12 @@ pub fn process(
         (Some(src), None) => {
             let rendered_src = utils::replace_placeholders(src, vars_map);
             let resolved_src = utils::resolve_src_path(deploy_file_dir, &rendered_src);
-            std::fs::read(&resolved_src)
-                .map_err(|e| format!("Copy source not found: {}: {}", resolved_src.display(), e))?
+            std::fs::read(&resolved_src).map_err(|_| {
+                format!(
+                    "Copy source not found: {}",
+                    resolved_src.to_string_lossy().replace('\\', "/")
+                )
+            })?
         }
     };
 
