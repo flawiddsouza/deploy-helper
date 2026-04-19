@@ -1,11 +1,13 @@
 Starting deployment: Test
 
 Executing task: Set vars
+(chdir: tests/mocks/ls-dir)
 > ls
 file1.txt
 file2.txt
 
 Executing task: Set vars
+(chdir: tests/mocks/ls-dir2)
 > ls
 file1.txt
 file2.txt

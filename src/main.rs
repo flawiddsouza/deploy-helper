@@ -128,6 +128,12 @@ fn process_tasks(
             .or(dep_chdir)
             .map(|s| utils::replace_placeholders(s, ctx.vars_map));
 
+        if task.chdir.is_some() {
+            if let Some(ref resolved) = task_chdir {
+                println!("{}", format!("(chdir: {})", resolved).bright_black());
+            }
+        }
+
         let use_login_shell = task.login_shell.unwrap_or(dep_login_shell);
 
         let task_become = task.r#become.unwrap_or(false);
