@@ -1,4 +1,4 @@
 Starting deployment: Template missing src
 
 Executing task: Render missing template
-Error: "Template source not found: test-ymls/this-file-does-not-exist.j2"
+Error: "Template source not found: test-ymls/file-ops/this-file-does-not-exist.j2"

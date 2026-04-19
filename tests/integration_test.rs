@@ -52,7 +52,14 @@ fn run_test(yml_file: &str, should_fail: bool, extra_vars: &[&str], inventory_fi
 // which is required for TTY-prompt tests (rpassword reads from CONIN$).
 fn pty_command(yml_file: &str, inventory_file: &str) -> Command {
     let mut cmd = Command::new("cargo");
-    cmd.args(["run", "--quiet", "--", yml_file, "--inventory", inventory_file]);
+    cmd.args([
+        "run",
+        "--quiet",
+        "--",
+        yml_file,
+        "--inventory",
+        inventory_file,
+    ]);
     cmd
 }
 
@@ -147,660 +154,639 @@ fn run_tests_for_both_inventories(yml_file: &str, should_fail: bool, extra_vars:
     );
 }
 
-#[test]
-fn setting_and_debugging_vars() {
-    setup();
-    run_tests_for_both_inventories("test-ymls/setting-and-debugging-vars.yml", false, &[]);
-}
-
-#[test]
-fn use_vars_in_command_and_shell() {
-    setup();
-    run_tests_for_both_inventories("test-ymls/use-vars-in-command-and-shell.yml", false, &[]);
-}
-
-#[test]
-fn setting_working_directory_before_running_commands() {
-    setup();
-    run_tests_for_both_inventories(
-        "test-ymls/setting-working-directory-before-running-commands.yml",
-        false,
-        &[],
-    );
-}
-
-#[test]
-fn nested_json_parsing() {
-    setup();
-    run_tests_for_both_inventories("test-ymls/nested-json-parsing.yml", false, &[]);
-}
-
-#[test]
-fn setting_global_working_directory_before_running_commands() {
-    setup();
-    run_tests_for_both_inventories(
-        "test-ymls/setting-global-working-directory-before-running-commands.yml",
-        false,
-        &[],
-    );
-}
-
-#[test]
-fn dont_run_2nd_deploy_if_1st_fails() {
-    setup();
-    run_tests_for_both_inventories(
-        "test-ymls/dont-run-2nd-task-or-2nd-deploy-if-1st-fails.yml",
-        true,
-        &[],
-    );
-}
-
-#[test]
-fn shell_block_shares_state_across_lines() {
-    setup();
-    run_tests_for_both_inventories("test-ymls/shell-block-shares-state.yml", false, &[]);
-}
-
-#[test]
-fn use_output_of_one_task_shell_in_another_task_shell() {
-    setup();
-    run_tests_for_both_inventories(
-        "test-ymls/use-output-of-one-task-shell-in-another-task-shell.yml",
-        false,
-        &[],
-    );
-}
-
-#[test]
-fn set_and_use_vars_immediately_in_shell_and_command() {
-    setup();
-    run_tests_for_both_inventories(
-        "test-ymls/set-and-use-vars-immediately-in-shell-and-command.yml",
-        false,
-        &[],
-    );
-}
-
-#[test]
-fn debug_should_come_before_command_and_shell() {
-    setup();
-    run_tests_for_both_inventories(
-        "test-ymls/debug-should-come-before-command-and-shell.yml",
-        false,
-        &[],
-    );
-}
-
-#[test]
-fn nested_json_parsing_missing_property_error() {
-    setup();
-    run_tests_for_both_inventories(
-        "test-ymls/nested-json-parsing-missing-property-error.yml",
-        true,
-        &[],
-    );
-}
-
-#[test]
-fn missing_var_error() {
-    setup();
-    run_tests_for_both_inventories("test-ymls/missing-var-error.yml", true, &[]);
-}
-
-#[test]
-fn invalid_json_error() {
-    setup();
-    run_tests_for_both_inventories("test-ymls/invalid-json-error.yml", true, &[]);
-}
-
-#[test]
-fn extra_vars() {
-    setup();
-    run_tests_for_both_inventories("test-ymls/extra-vars.yml", false, &["cat=1 bat=2"]);
-    run_tests_for_both_inventories(
-        "test-ymls/extra-vars.yml",
-        false,
-        &["{ \"cat\": 1, \"bat\": 2 }"],
-    );
-    run_tests_for_both_inventories(
-        "test-ymls/extra-vars.yml",
-        false,
-        &["@test-ymls/extra-vars.vars.yml"],
-    );
-}
-
-#[test]
-fn extra_vars_multiple_e() {
-    setup();
-    run_tests_for_both_inventories(
-        "test-ymls/extra-vars.yml",
-        false,
-        &[
-            "@test-ymls/extra-vars-multi-e.vars1.yml",
-            "@test-ymls/extra-vars-multi-e.vars2.yml",
-        ],
-    );
-}
-
-#[test]
-fn extra_vars_later_overrides_earlier() {
-    setup();
-    run_tests_for_both_inventories(
-        "test-ymls/extra-vars.yml",
-        false,
-        &["cat=wrong bat=2", "cat=1"],
-    );
-}
-
-#[test]
-fn when_condition() {
-    setup();
-    run_tests_for_both_inventories("test-ymls/when-condition.yml", false, &["condition=true"]);
-}
-
-#[test]
-fn loop_item() {
-    setup();
-    run_tests_for_both_inventories("test-ymls/loop-item.yml", false, &[]);
-}
-
-#[test]
-fn include_tasks() {
-    setup();
-    run_tests_for_both_inventories("test-ymls/include-tasks.yml", false, &[]);
-}
-
-#[test]
-fn run_level_vars() {
-    setup();
-    run_tests_for_both_inventories("test-ymls/run-level-vars.yml", false, &[]);
-}
-
-#[test]
-fn use_vars_in_chdir() {
-    setup();
-    run_tests_for_both_inventories("test-ymls/use-vars-in-chdir.yml", false, &[]);
-}
-
-#[test]
-fn use_vars_in_task_name() {
-    setup();
-    run_tests_for_both_inventories("test-ymls/use-vars-in-task-name.yml", false, &[]);
-}
-
-#[test]
-fn use_vars_in_run_name() {
-    setup();
-    run_tests_for_both_inventories(
-        "test-ymls/use-vars-in-run-name.yml",
-        false,
-        &["@test-ymls/use-vars-in-run-name.vars.yml"],
-    );
-}
-
-#[test]
-fn become_nopasswd() {
-    setup();
-    run_test(
-        "test-ymls/become-nopasswd.yml",
-        false,
-        &["become_password="],
-        "tests/servers/become-nopass.yml",
-    );
-}
-
-#[test]
-fn become_with_password() {
-    setup();
-    run_test(
-        "test-ymls/become-with-password.yml",
-        false,
-        &["become_password=password"],
-        "tests/servers/become-withpass.yml",
-    );
-}
-
-#[test]
-fn become_su_nopasswd() {
-    setup();
-    run_test(
-        "test-ymls/become-su-nopasswd.yml",
-        false,
-        &["become_password="],
-        "tests/servers/become-root.yml",
-    );
-}
-
-#[test]
-fn become_invalid_method_error() {
-    setup();
-    run_test(
-        "test-ymls/become-invalid-method-error.yml",
-        true,
-        &[],
-        "tests/servers/local.yml",
-    );
-}
-
-#[test]
-fn become_su_with_password() {
-    setup();
-    run_test(
-        "test-ymls/become-su-with-password.yml",
-        false,
-        &["become_password=password"],
-        "tests/servers/become-withpass.yml",
-    );
-}
-
-#[test]
-fn become_doas() {
-    setup();
-    run_test(
-        "test-ymls/become-doas.yml",
-        false,
-        &[],
-        "tests/servers/become-doas.yml",
-    );
-}
-
-#[test]
-fn become_doas_with_password_error() {
-    setup();
-    run_test(
-        "test-ymls/become-doas-with-password-error.yml",
-        true,
-        &["become_password=secret"],
-        "tests/servers/local.yml",
-    );
-}
-
-#[test]
-fn servers_yml_var_support() {
-    setup();
-    run_test(
-        "test-ymls/setting-and-debugging-vars.yml",
-        false,
-        &["test_host=localhost"],
-        "tests/servers/local-templated.yml",
-    );
-}
-
-#[test]
-fn servers_yml_var_support_remote_fields() {
-    setup();
-    run_test(
-        "test-ymls/setting-and-debugging-vars.yml",
-        false,
-        &[
-            "remote_host=localhost",
-            "remote_user=root",
-            "remote_password=password",
-        ],
-        "tests/servers/remote-templated.yml",
-    );
-}
-
-#[test]
-fn copy_content_basic() {
-    setup();
-    run_tests_for_both_inventories("test-ymls/copy-content-basic.yml", false, &[]);
-}
-
-#[test]
-fn template_basic() {
-    setup();
-    run_tests_for_both_inventories("test-ymls/template-basic.yml", false, &[]);
-}
-
-#[test]
-fn copy_with_src() {
-    setup();
-    run_tests_for_both_inventories("test-ymls/copy-with-src.yml", false, &[]);
-}
-
-#[test]
-fn copy_both_src_and_content_error() {
-    setup();
-    run_tests_for_both_inventories("test-ymls/copy-both-src-and-content-error.yml", true, &[]);
-}
-
-#[test]
-fn copy_neither_src_nor_content_error() {
-    setup();
-    run_tests_for_both_inventories(
-        "test-ymls/copy-neither-src-nor-content-error.yml",
-        true,
-        &[],
-    );
-}
-
-#[test]
-fn template_missing_src_error() {
-    setup();
-    run_tests_for_both_inventories("test-ymls/template-missing-src-error.yml", true, &[]);
-}
-
-#[test]
-fn copy_missing_src_error() {
-    setup();
-    run_tests_for_both_inventories("test-ymls/copy-missing-src-error.yml", true, &[]);
-}
-
-#[test]
-fn template_with_become() {
-    setup();
-    run_test(
-        "test-ymls/template-with-become.yml",
-        false,
-        &["become_password="],
-        "tests/servers/become-nopass.yml",
-    );
-}
-
-#[test]
-fn template_vars_in_src_and_dest() {
-    setup();
-    run_tests_for_both_inventories("test-ymls/template-vars-in-src-and-dest.yml", false, &[]);
-}
-
-#[test]
-fn copy_content_preserves_whitespace() {
-    setup();
-    run_tests_for_both_inventories(
-        "test-ymls/copy-content-preserves-whitespace.yml",
-        false,
-        &[],
-    );
-}
-
-#[test]
-fn tags_filter_runs_only_matching() {
-    setup();
+fn run_test_with_flags_both_inventories(
+    yml_file: &str,
+    should_fail: bool,
+    extra_vars: &[&str],
+    extra_flags: &[&str],
+    stdin_input: Option<&str>,
+) {
     run_test_with_flags(
-        "test-ymls/tags-filter.yml",
-        false,
-        &[],
+        yml_file,
+        should_fail,
+        extra_vars,
         "tests/servers/local.yml",
-        &["--tags", "build"],
-        None,
+        extra_flags,
+        stdin_input,
     );
     run_test_with_flags(
-        "test-ymls/tags-filter.yml",
-        false,
-        &[],
+        yml_file,
+        should_fail,
+        extra_vars,
         "tests/servers/remote.yml",
-        &["--tags", "build"],
-        None,
+        extra_flags,
+        stdin_input,
     );
 }
 
-#[test]
-fn skip_tags_excludes_matches() {
-    setup();
-    run_test_with_flags(
-        "test-ymls/skip-tags.yml",
-        false,
-        &[],
-        "tests/servers/local.yml",
-        &["--skip-tags", "drop"],
-        None,
-    );
-    run_test_with_flags(
-        "test-ymls/skip-tags.yml",
-        false,
-        &[],
-        "tests/servers/remote.yml",
-        &["--skip-tags", "drop"],
-        None,
-    );
+mod vars {
+    use super::*;
+
+    #[test]
+    fn setting_and_debugging_vars() {
+        setup();
+        run_tests_for_both_inventories("test-ymls/vars/setting-and-debugging-vars.yml", false, &[]);
+    }
+
+    #[test]
+    fn use_vars_in_command_and_shell() {
+        setup();
+        run_tests_for_both_inventories(
+            "test-ymls/vars/use-vars-in-command-and-shell.yml",
+            false,
+            &[],
+        );
+    }
+
+    #[test]
+    fn nested_json_parsing() {
+        setup();
+        run_tests_for_both_inventories("test-ymls/vars/nested-json-parsing.yml", false, &[]);
+    }
+
+    #[test]
+    fn nested_json_parsing_missing_property_error() {
+        setup();
+        run_tests_for_both_inventories(
+            "test-ymls/vars/nested-json-parsing-missing-property-error.yml",
+            true,
+            &[],
+        );
+    }
+
+    #[test]
+    fn missing_var_error() {
+        setup();
+        run_tests_for_both_inventories("test-ymls/vars/missing-var-error.yml", true, &[]);
+    }
+
+    #[test]
+    fn invalid_json_error() {
+        setup();
+        run_tests_for_both_inventories("test-ymls/vars/invalid-json-error.yml", true, &[]);
+    }
+
+    #[test]
+    fn extra_vars() {
+        setup();
+        run_tests_for_both_inventories("test-ymls/vars/extra-vars.yml", false, &["cat=1 bat=2"]);
+        run_tests_for_both_inventories(
+            "test-ymls/vars/extra-vars.yml",
+            false,
+            &["{ \"cat\": 1, \"bat\": 2 }"],
+        );
+        run_tests_for_both_inventories(
+            "test-ymls/vars/extra-vars.yml",
+            false,
+            &["@test-ymls/vars/extra-vars.vars.yml"],
+        );
+    }
+
+    #[test]
+    fn extra_vars_multiple_e() {
+        setup();
+        run_tests_for_both_inventories(
+            "test-ymls/vars/extra-vars.yml",
+            false,
+            &[
+                "@test-ymls/vars/extra-vars-multi-e.vars1.yml",
+                "@test-ymls/vars/extra-vars-multi-e.vars2.yml",
+            ],
+        );
+    }
+
+    #[test]
+    fn extra_vars_later_overrides_earlier() {
+        setup();
+        run_tests_for_both_inventories(
+            "test-ymls/vars/extra-vars.yml",
+            false,
+            &["cat=wrong bat=2", "cat=1"],
+        );
+    }
+
+    #[test]
+    fn when_condition() {
+        setup();
+        run_tests_for_both_inventories(
+            "test-ymls/vars/when-condition.yml",
+            false,
+            &["condition=true"],
+        );
+    }
+
+    #[test]
+    fn run_level_vars() {
+        setup();
+        run_tests_for_both_inventories("test-ymls/vars/run-level-vars.yml", false, &[]);
+    }
+
+    #[test]
+    fn use_vars_in_chdir() {
+        setup();
+        run_tests_for_both_inventories("test-ymls/vars/use-vars-in-chdir.yml", false, &[]);
+    }
+
+    #[test]
+    fn use_vars_in_task_name() {
+        setup();
+        run_tests_for_both_inventories("test-ymls/vars/use-vars-in-task-name.yml", false, &[]);
+    }
+
+    #[test]
+    fn use_vars_in_run_name() {
+        setup();
+        run_tests_for_both_inventories(
+            "test-ymls/vars/use-vars-in-run-name.yml",
+            false,
+            &["@test-ymls/vars/use-vars-in-run-name.vars.yml"],
+        );
+    }
+
+    #[test]
+    fn servers_yml_var_support() {
+        setup();
+        run_test(
+            "test-ymls/vars/setting-and-debugging-vars.yml",
+            false,
+            &["test_host=localhost"],
+            "tests/servers/local-templated.yml",
+        );
+    }
+
+    #[test]
+    fn servers_yml_var_support_remote_fields() {
+        setup();
+        run_test(
+            "test-ymls/vars/setting-and-debugging-vars.yml",
+            false,
+            &[
+                "remote_host=localhost",
+                "remote_user=root",
+                "remote_password=password",
+            ],
+            "tests/servers/remote-templated.yml",
+        );
+    }
+
+    #[test]
+    fn set_and_use_vars_immediately_in_shell_and_command() {
+        setup();
+        run_tests_for_both_inventories(
+            "test-ymls/vars/set-and-use-vars-immediately-in-shell-and-command.yml",
+            false,
+            &[],
+        );
+    }
 }
 
-#[test]
-fn skip_tags_wins_over_tags_flag() {
-    setup();
-    run_test_with_flags(
-        "test-ymls/tags-and-skip-tags.yml",
-        false,
-        &[],
-        "tests/servers/local.yml",
-        &["--tags", "web", "--skip-tags", "tls"],
-        None,
-    );
-    run_test_with_flags(
-        "test-ymls/tags-and-skip-tags.yml",
-        false,
-        &[],
-        "tests/servers/remote.yml",
-        &["--tags", "web", "--skip-tags", "tls"],
-        None,
-    );
+mod shell {
+    use super::*;
+
+    #[test]
+    fn setting_working_directory_before_running_commands() {
+        setup();
+        run_tests_for_both_inventories(
+            "test-ymls/shell/setting-working-directory-before-running-commands.yml",
+            false,
+            &[],
+        );
+    }
+
+    #[test]
+    fn setting_global_working_directory_before_running_commands() {
+        setup();
+        run_tests_for_both_inventories(
+            "test-ymls/shell/setting-global-working-directory-before-running-commands.yml",
+            false,
+            &[],
+        );
+    }
+
+    #[test]
+    fn dont_run_2nd_deploy_if_1st_fails() {
+        setup();
+        run_tests_for_both_inventories(
+            "test-ymls/shell/dont-run-2nd-task-or-2nd-deploy-if-1st-fails.yml",
+            true,
+            &[],
+        );
+    }
+
+    #[test]
+    fn shell_block_shares_state_across_lines() {
+        setup();
+        run_tests_for_both_inventories("test-ymls/shell/shell-block-shares-state.yml", false, &[]);
+    }
+
+    #[test]
+    fn use_output_of_one_task_shell_in_another_task_shell() {
+        setup();
+        run_tests_for_both_inventories(
+            "test-ymls/shell/use-output-of-one-task-shell-in-another-task-shell.yml",
+            false,
+            &[],
+        );
+    }
+
+    #[test]
+    fn debug_should_come_before_command_and_shell() {
+        setup();
+        run_tests_for_both_inventories(
+            "test-ymls/shell/debug-should-come-before-command-and-shell.yml",
+            false,
+            &[],
+        );
+    }
+
+    #[test]
+    fn loop_item() {
+        setup();
+        run_tests_for_both_inventories("test-ymls/shell/loop-item.yml", false, &[]);
+    }
+
+    #[test]
+    fn include_tasks() {
+        setup();
+        run_tests_for_both_inventories("test-ymls/shell/include-tasks.yml", false, &[]);
+    }
 }
 
-#[test]
-fn always_tag_bypasses_tags_filter() {
-    setup();
-    run_test_with_flags(
-        "test-ymls/always-tag.yml",
-        false,
-        &[],
-        "tests/servers/local.yml",
-        &["--tags", "tls"],
-        None,
-    );
-    run_test_with_flags(
-        "test-ymls/always-tag.yml",
-        false,
-        &[],
-        "tests/servers/remote.yml",
-        &["--tags", "tls"],
-        None,
-    );
+mod privilege {
+    use super::*;
+
+    #[test]
+    fn become_nopasswd() {
+        setup();
+        run_test(
+            "test-ymls/become/become-nopasswd.yml",
+            false,
+            &["become_password="],
+            "tests/servers/become-nopass.yml",
+        );
+    }
+
+    #[test]
+    fn become_with_password() {
+        setup();
+        run_test(
+            "test-ymls/become/become-with-password.yml",
+            false,
+            &["become_password=password"],
+            "tests/servers/become-withpass.yml",
+        );
+    }
+
+    #[test]
+    fn become_su_nopasswd() {
+        setup();
+        run_test(
+            "test-ymls/become/become-su-nopasswd.yml",
+            false,
+            &["become_password="],
+            "tests/servers/become-root.yml",
+        );
+    }
+
+    #[test]
+    fn become_invalid_method_error() {
+        setup();
+        run_test(
+            "test-ymls/become/become-invalid-method-error.yml",
+            true,
+            &[],
+            "tests/servers/local.yml",
+        );
+    }
+
+    #[test]
+    fn become_su_with_password() {
+        setup();
+        run_test(
+            "test-ymls/become/become-su-with-password.yml",
+            false,
+            &["become_password=password"],
+            "tests/servers/become-withpass.yml",
+        );
+    }
+
+    #[test]
+    fn become_doas() {
+        setup();
+        run_test(
+            "test-ymls/become/become-doas.yml",
+            false,
+            &[],
+            "tests/servers/become-doas.yml",
+        );
+    }
+
+    #[test]
+    fn become_doas_with_password_error() {
+        setup();
+        run_test(
+            "test-ymls/become/become-doas-with-password-error.yml",
+            true,
+            &["become_password=secret"],
+            "tests/servers/local.yml",
+        );
+    }
+
+    #[test]
+    fn become_password_prompted_via_tty() {
+        setup();
+        let mut p = Session::spawn(pty_command(
+            "test-ymls/become/become-with-password.yml",
+            "tests/servers/become-withpass.yml",
+        ))
+        .expect("spawn PTY session");
+        // The trailing space in "BECOME password: " is re-encoded as ESC[1C by
+        // the ConHost, so match without it.
+        p.expect("BECOME password:")
+            .expect("password prompt appeared on TTY");
+        p.send_line("password").expect("send password");
+        wait_for_exit(&p, 30);
+    }
 }
 
-#[test]
-fn never_tag_hidden_by_default() {
-    setup();
-    run_test_with_flags(
-        "test-ymls/never-tag.yml",
-        false,
-        &[],
-        "tests/servers/local.yml",
-        &[],
-        None,
-    );
+mod file_ops {
+    use super::*;
+
+    #[test]
+    fn copy_content_basic() {
+        setup();
+        run_tests_for_both_inventories("test-ymls/file-ops/copy-content-basic.yml", false, &[]);
+    }
+
+    #[test]
+    fn template_basic() {
+        setup();
+        run_tests_for_both_inventories("test-ymls/file-ops/template-basic.yml", false, &[]);
+    }
+
+    #[test]
+    fn copy_with_src() {
+        setup();
+        run_tests_for_both_inventories("test-ymls/file-ops/copy-with-src.yml", false, &[]);
+    }
+
+    #[test]
+    fn copy_both_src_and_content_error() {
+        setup();
+        run_tests_for_both_inventories(
+            "test-ymls/file-ops/copy-both-src-and-content-error.yml",
+            true,
+            &[],
+        );
+    }
+
+    #[test]
+    fn copy_neither_src_nor_content_error() {
+        setup();
+        run_tests_for_both_inventories(
+            "test-ymls/file-ops/copy-neither-src-nor-content-error.yml",
+            true,
+            &[],
+        );
+    }
+
+    #[test]
+    fn template_missing_src_error() {
+        setup();
+        run_tests_for_both_inventories(
+            "test-ymls/file-ops/template-missing-src-error.yml",
+            true,
+            &[],
+        );
+    }
+
+    #[test]
+    fn copy_missing_src_error() {
+        setup();
+        run_tests_for_both_inventories("test-ymls/file-ops/copy-missing-src-error.yml", true, &[]);
+    }
+
+    #[test]
+    fn template_with_become() {
+        setup();
+        run_test(
+            "test-ymls/file-ops/template-with-become.yml",
+            false,
+            &["become_password="],
+            "tests/servers/become-nopass.yml",
+        );
+    }
+
+    #[test]
+    fn template_vars_in_src_and_dest() {
+        setup();
+        run_tests_for_both_inventories(
+            "test-ymls/file-ops/template-vars-in-src-and-dest.yml",
+            false,
+            &[],
+        );
+    }
+
+    #[test]
+    fn copy_content_preserves_whitespace() {
+        setup();
+        run_tests_for_both_inventories(
+            "test-ymls/file-ops/copy-content-preserves-whitespace.yml",
+            false,
+            &[],
+        );
+    }
 }
 
-#[test]
-fn never_tag_opt_in_via_other_tag() {
-    setup();
-    run_test_with_flags(
-        "test-ymls/never-tag-optin.yml",
-        false,
-        &[],
-        "tests/servers/local.yml",
-        &["--tags", "nuke"],
-        None,
-    );
+mod tags {
+    use super::*;
+
+    #[test]
+    fn tags_filter_runs_only_matching() {
+        setup();
+        run_test_with_flags_both_inventories(
+            "test-ymls/tags/tags-filter.yml",
+            false,
+            &[],
+            &["--tags", "build"],
+            None,
+        );
+    }
+
+    #[test]
+    fn skip_tags_excludes_matches() {
+        setup();
+        run_test_with_flags_both_inventories(
+            "test-ymls/tags/skip-tags.yml",
+            false,
+            &[],
+            &["--skip-tags", "drop"],
+            None,
+        );
+    }
+
+    #[test]
+    fn skip_tags_wins_over_tags_flag() {
+        setup();
+        run_test_with_flags_both_inventories(
+            "test-ymls/tags/tags-and-skip-tags.yml",
+            false,
+            &[],
+            &["--tags", "web", "--skip-tags", "tls"],
+            None,
+        );
+    }
+
+    #[test]
+    fn always_tag_bypasses_tags_filter() {
+        setup();
+        run_test_with_flags_both_inventories(
+            "test-ymls/tags/always-tag.yml",
+            false,
+            &[],
+            &["--tags", "tls"],
+            None,
+        );
+    }
+
+    #[test]
+    fn never_tag_hidden_by_default() {
+        setup();
+        run_test_with_flags(
+            "test-ymls/tags/never-tag.yml",
+            false,
+            &[],
+            "tests/servers/local.yml",
+            &[],
+            None,
+        );
+    }
+
+    #[test]
+    fn never_tag_opt_in_via_other_tag() {
+        setup();
+        run_test_with_flags(
+            "test-ymls/tags/never-tag-optin.yml",
+            false,
+            &[],
+            "tests/servers/local.yml",
+            &["--tags", "nuke"],
+            None,
+        );
+    }
+
+    #[test]
+    fn tags_inheritance_flows_from_include() {
+        setup();
+        run_test_with_flags_both_inventories(
+            "test-ymls/tags/tags-inheritance.yml",
+            false,
+            &[],
+            &["--tags", "nginx"],
+            None,
+        );
+    }
 }
 
-#[test]
-fn start_at_task_skips_before_match() {
-    setup();
-    run_test_with_flags(
-        "test-ymls/start-at-task.yml",
-        false,
-        &[],
-        "tests/servers/local.yml",
-        &["--start-at-task", "Second"],
-        None,
-    );
-    run_test_with_flags(
-        "test-ymls/start-at-task.yml",
-        false,
-        &[],
-        "tests/servers/remote.yml",
-        &["--start-at-task", "Second"],
-        None,
-    );
-}
+mod execution {
+    use super::*;
 
-#[test]
-fn tags_inheritance_flows_from_include() {
-    setup();
-    run_test_with_flags(
-        "test-ymls/tags-inheritance.yml",
-        false,
-        &[],
-        "tests/servers/local.yml",
-        &["--tags", "nginx"],
-        None,
-    );
-    run_test_with_flags(
-        "test-ymls/tags-inheritance.yml",
-        false,
-        &[],
-        "tests/servers/remote.yml",
-        &["--tags", "nginx"],
-        None,
-    );
-}
+    #[test]
+    fn start_at_task_skips_before_match() {
+        setup();
+        run_test_with_flags_both_inventories(
+            "test-ymls/execution/start-at-task.yml",
+            false,
+            &[],
+            &["--start-at-task", "Second"],
+            None,
+        );
+    }
 
-#[test]
-fn step_prompt_y_n_c() {
-    setup();
-    run_test_with_flags(
-        "test-ymls/step.yml",
-        false,
-        &[],
-        "tests/servers/local.yml",
-        &["--step"],
-        Some("y\nn\nc\n"),
-    );
-    run_test_with_flags(
-        "test-ymls/step.yml",
-        false,
-        &[],
-        "tests/servers/remote.yml",
-        &["--step"],
-        Some("y\nn\nc\n"),
-    );
-}
+    #[test]
+    fn step_prompt_y_n_c() {
+        setup();
+        run_test_with_flags_both_inventories(
+            "test-ymls/execution/step.yml",
+            false,
+            &[],
+            &["--step"],
+            Some("y\nn\nc\n"),
+        );
+    }
 
-#[test]
-fn step_prompt_eof_skips_all() {
-    setup();
-    run_test_with_flags(
-        "test-ymls/step-eof.yml",
-        false,
-        &[],
-        "tests/servers/local.yml",
-        &["--step"],
-        Some(""),
-    );
-    run_test_with_flags(
-        "test-ymls/step-eof.yml",
-        false,
-        &[],
-        "tests/servers/remote.yml",
-        &["--step"],
-        Some(""),
-    );
-}
+    #[test]
+    fn step_prompt_eof_skips_all() {
+        setup();
+        run_test_with_flags_both_inventories(
+            "test-ymls/execution/step-eof.yml",
+            false,
+            &[],
+            &["--step"],
+            Some(""),
+        );
+    }
 
-#[test]
-fn step_prompt_unknown_reprompts() {
-    setup();
-    run_test_with_flags(
-        "test-ymls/step-reprompt.yml",
-        false,
-        &[],
-        "tests/servers/local.yml",
-        &["--step"],
-        Some("?\ny\nn\n"),
-    );
-    run_test_with_flags(
-        "test-ymls/step-reprompt.yml",
-        false,
-        &[],
-        "tests/servers/remote.yml",
-        &["--step"],
-        Some("?\ny\nn\n"),
-    );
-}
+    #[test]
+    fn step_prompt_unknown_reprompts() {
+        setup();
+        run_test_with_flags_both_inventories(
+            "test-ymls/execution/step-reprompt.yml",
+            false,
+            &[],
+            &["--step"],
+            Some("?\ny\nn\n"),
+        );
+    }
 
-#[test]
-fn list_tasks_prints_tree_with_effective_tags() {
-    setup();
-    run_test_with_flags(
-        "test-ymls/list-tasks.yml",
-        false,
-        &[],
-        "tests/servers/local.yml",
-        &["--list-tasks"],
-        None,
-    );
-    run_test_with_flags(
-        "test-ymls/list-tasks.yml",
-        false,
-        &[],
-        "tests/servers/remote.yml",
-        &["--list-tasks"],
-        None,
-    );
-}
+    #[test]
+    fn list_tasks_prints_tree_with_effective_tags() {
+        setup();
+        run_test_with_flags_both_inventories(
+            "test-ymls/execution/list-tasks.yml",
+            false,
+            &[],
+            &["--list-tasks"],
+            None,
+        );
+    }
 
-#[test]
-fn list_tasks_respects_tags_filter() {
-    setup();
-    run_test_with_flags(
-        "test-ymls/list-tasks-filtered.yml",
-        false,
-        &[],
-        "tests/servers/local.yml",
-        &["--list-tasks", "--tags", "extras"],
-        None,
-    );
-}
+    #[test]
+    fn list_tasks_respects_tags_filter() {
+        setup();
+        run_test_with_flags(
+            "test-ymls/execution/list-tasks-filtered.yml",
+            false,
+            &[],
+            "tests/servers/local.yml",
+            &["--list-tasks", "--tags", "extras"],
+            None,
+        );
+    }
 
-#[test]
-fn list_tasks_renders_names_and_matches_start_at_task() {
-    setup();
-    run_test_with_flags(
-        "test-ymls/list-tasks-templated.yml",
-        false,
-        &["env=prod"],
-        "tests/servers/local.yml",
-        &["--list-tasks", "--start-at-task", "Deploy prod"],
-        None,
-    );
-}
+    #[test]
+    fn list_tasks_renders_names_and_matches_start_at_task() {
+        setup();
+        run_test_with_flags(
+            "test-ymls/execution/list-tasks-templated.yml",
+            false,
+            &["env=prod"],
+            "tests/servers/local.yml",
+            &["--list-tasks", "--start-at-task", "Deploy prod"],
+            None,
+        );
+    }
 
-#[test]
-fn list_tasks_templates_deployment_vars_in_names() {
-    setup();
-    run_test_with_flags(
-        "test-ymls/list-tasks-dep-vars.yml",
-        false,
-        &[],
-        "tests/servers/local.yml",
-        &["--list-tasks"],
-        None,
-    );
-}
-
-
-#[test]
-fn become_password_prompted_via_tty() {
-    setup();
-    let mut p = Session::spawn(pty_command(
-        "test-ymls/become-with-password.yml",
-        "tests/servers/become-withpass.yml",
-    ))
-    .expect("spawn PTY session");
-    // The trailing space in "BECOME password: " is re-encoded as ESC[1C by
-    // the ConHost, so match without it.
-    p.expect("BECOME password:").expect("password prompt appeared on TTY");
-    p.send_line("password").expect("send password");
-    wait_for_exit(&p, 30);
+    #[test]
+    fn list_tasks_templates_deployment_vars_in_names() {
+        setup();
+        run_test_with_flags(
+            "test-ymls/execution/list-tasks-dep-vars.yml",
+            false,
+            &[],
+            "tests/servers/local.yml",
+            &["--list-tasks"],
+            None,
+        );
+    }
 }

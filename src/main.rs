@@ -386,7 +386,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         } else {
             ""
         };
-        eprintln!("{}", format!("{}: not found{}{}", server_file, location, hint).red());
+        eprintln!(
+            "{}",
+            format!("{}: not found{}{}", server_file, location, hint).red()
+        );
         exit(1);
     }
     let server_config: ServerConfig = utils::read_yaml(server_file);
