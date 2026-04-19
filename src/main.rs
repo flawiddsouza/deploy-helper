@@ -5,12 +5,12 @@ mod utils;
 use clap::{Arg, Command as ClapCommand};
 use colored::Colorize;
 use indexmap::IndexMap;
+use modules::filter;
 use serde::Deserialize;
 use serde_json::Value;
 use ssh2::Session;
 use std::path::Path;
 use std::process::exit;
-use modules::filter;
 
 #[derive(Debug, Deserialize)]
 struct ServerConfig {
@@ -31,9 +31,18 @@ impl TargetHost {
         TargetHost {
             host: utils::replace_placeholders(&self.host, vars),
             port: self.port,
-            user: self.user.as_deref().map(|s| utils::replace_placeholders(s, vars)),
-            password: self.password.as_deref().map(|s| utils::replace_placeholders(s, vars)),
-            ssh_key_path: self.ssh_key_path.as_deref().map(|s| utils::replace_placeholders(s, vars)),
+            user: self
+                .user
+                .as_deref()
+                .map(|s| utils::replace_placeholders(s, vars)),
+            password: self
+                .password
+                .as_deref()
+                .map(|s| utils::replace_placeholders(s, vars)),
+            ssh_key_path: self
+                .ssh_key_path
+                .as_deref()
+                .map(|s| utils::replace_placeholders(s, vars)),
         }
     }
 }
@@ -72,7 +81,12 @@ fn process_tasks(
 
         let effective_tags = filter::merge_tags(ancestor_tags, task.tags.as_deref());
 
-        match filter::decide(&task_name, &effective_tags, ctx.filter_config, ctx.filter_state) {
+        match filter::decide(
+            &task_name,
+            &effective_tags,
+            ctx.filter_config,
+            ctx.filter_state,
+        ) {
             filter::Decision::Run => {}
             filter::Decision::Skip(_) => continue,
         }
@@ -86,7 +100,10 @@ fn process_tasks(
             match modules::step::prompt(&task_name)? {
                 modules::step::StepChoice::Run => {}
                 modules::step::StepChoice::Skip => {
-                    println!("{}", format!("Skipping task: {} (step)\n", task_name).yellow());
+                    println!(
+                        "{}",
+                        format!("Skipping task: {} (step)\n", task_name).yellow()
+                    );
                     continue;
                 }
                 modules::step::StepChoice::ContinueWithoutPrompt => {
@@ -127,7 +144,8 @@ fn process_tasks(
 
         if task_become {
             if task_become_method == "doas" {
-                if ctx.vars_map
+                if ctx
+                    .vars_map
                     .get("become_password")
                     .and_then(|v| v.as_str())
                     .filter(|s| !s.is_empty())

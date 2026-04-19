@@ -9,7 +9,13 @@ use std::path::Path;
 pub fn format_line(indent: usize, name: &str, name_col_width: usize, tags: &[String]) -> String {
     let pad = "  ".repeat(indent);
     let tags_str = format!("[{}]", tags.join(", "));
-    format!("{}{:<width$}  TAGS: {}", pad, name, tags_str, width = name_col_width)
+    format!(
+        "{}{:<width$}  TAGS: {}",
+        pad,
+        name,
+        tags_str,
+        width = name_col_width
+    )
 }
 
 pub fn run(
@@ -30,7 +36,15 @@ pub fn run(
         let dep_name = utils::replace_placeholders(&dep.name, &working_vars);
         println!("Starting deployment: {}", dep_name);
         let ancestor = dep.tags.clone().unwrap_or_default();
-        let visible = collect_visible(&dep.tasks, &ancestor, config, &mut state, 0, deploy_file_dir, &working_vars);
+        let visible = collect_visible(
+            &dep.tasks,
+            &ancestor,
+            config,
+            &mut state,
+            0,
+            deploy_file_dir,
+            &working_vars,
+        );
         let width = visible
             .iter()
             .map(|(_, name, _)| name.chars().count())
@@ -57,7 +71,10 @@ fn collect_visible(
     for task in tasks {
         let task_name = utils::replace_placeholders(&task.name, vars_map);
         let effective = filter::merge_tags(ancestor_tags, task.tags.as_deref());
-        if matches!(filter::decide(&task_name, &effective, config, state), Decision::Skip(_)) {
+        if matches!(
+            filter::decide(&task_name, &effective, config, state),
+            Decision::Skip(_)
+        ) {
             continue;
         }
         out.push((depth, task_name, effective.clone()));
@@ -65,7 +82,15 @@ fn collect_visible(
         if let Some(include_file) = &task.include_tasks {
             let include_path = deploy_file_dir.join(include_file);
             let children = include_tasks::process(include_path.to_str().unwrap());
-            let mut nested = collect_visible(&children, &effective, config, state, depth + 1, deploy_file_dir, vars_map);
+            let mut nested = collect_visible(
+                &children,
+                &effective,
+                config,
+                state,
+                depth + 1,
+                deploy_file_dir,
+                vars_map,
+            );
             out.append(&mut nested);
         }
     }

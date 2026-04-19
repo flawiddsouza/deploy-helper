@@ -77,7 +77,9 @@ pub fn decide(
     // Gate 3: never hides unless user explicitly opts in
     if has("never") {
         let opted_in = in_list(&config.tags, "never")
-            || effective_tags.iter().any(|t| t != "never" && in_list(&config.tags, t));
+            || effective_tags
+                .iter()
+                .any(|t| t != "never" && in_list(&config.tags, t));
         if !opted_in {
             return Decision::Skip(SkipReason::Never);
         }
@@ -136,84 +138,148 @@ mod tests {
 
     #[test]
     fn tags_filter_matches_one_of_many() {
-        let c = FilterConfig { tags: tags(&["web"]), ..cfg() };
+        let c = FilterConfig {
+            tags: tags(&["web"]),
+            ..cfg()
+        };
         let mut s = GateState::new(&c);
-        assert_eq!(decide("t", &tags(&["web", "nginx"]), &c, &mut s), Decision::Run);
+        assert_eq!(
+            decide("t", &tags(&["web", "nginx"]), &c, &mut s),
+            Decision::Run
+        );
     }
 
     #[test]
     fn tags_filter_skips_when_no_match() {
-        let c = FilterConfig { tags: tags(&["web"]), ..cfg() };
+        let c = FilterConfig {
+            tags: tags(&["web"]),
+            ..cfg()
+        };
         let mut s = GateState::new(&c);
-        assert_eq!(decide("t", &tags(&["nginx"]), &c, &mut s), Decision::Skip(SkipReason::NoMatchingTag));
+        assert_eq!(
+            decide("t", &tags(&["nginx"]), &c, &mut s),
+            Decision::Skip(SkipReason::NoMatchingTag)
+        );
     }
 
     #[test]
     fn skip_tags_wins_over_tags() {
-        let c = FilterConfig { tags: tags(&["web"]), skip_tags: tags(&["tls"]), ..cfg() };
+        let c = FilterConfig {
+            tags: tags(&["web"]),
+            skip_tags: tags(&["tls"]),
+            ..cfg()
+        };
         let mut s = GateState::new(&c);
-        assert_eq!(decide("t", &tags(&["web", "tls"]), &c, &mut s), Decision::Skip(SkipReason::SkipTag));
+        assert_eq!(
+            decide("t", &tags(&["web", "tls"]), &c, &mut s),
+            Decision::Skip(SkipReason::SkipTag)
+        );
     }
 
     #[test]
     fn always_bypasses_tags_filter() {
-        let c = FilterConfig { tags: tags(&["other"]), ..cfg() };
+        let c = FilterConfig {
+            tags: tags(&["other"]),
+            ..cfg()
+        };
         let mut s = GateState::new(&c);
-        assert_eq!(decide("t", &tags(&["always", "nginx"]), &c, &mut s), Decision::Run);
+        assert_eq!(
+            decide("t", &tags(&["always", "nginx"]), &c, &mut s),
+            Decision::Run
+        );
     }
 
     #[test]
     fn always_bypasses_skip_tags_except_self() {
-        let c = FilterConfig { skip_tags: tags(&["nginx"]), ..cfg() };
+        let c = FilterConfig {
+            skip_tags: tags(&["nginx"]),
+            ..cfg()
+        };
         let mut s = GateState::new(&c);
-        assert_eq!(decide("t", &tags(&["always", "nginx"]), &c, &mut s), Decision::Run);
+        assert_eq!(
+            decide("t", &tags(&["always", "nginx"]), &c, &mut s),
+            Decision::Run
+        );
 
-        let c2 = FilterConfig { skip_tags: tags(&["always"]), ..cfg() };
+        let c2 = FilterConfig {
+            skip_tags: tags(&["always"]),
+            ..cfg()
+        };
         let mut s2 = GateState::new(&c2);
-        assert_eq!(decide("t", &tags(&["always", "nginx"]), &c2, &mut s2), Decision::Skip(SkipReason::AlwaysSkipped));
+        assert_eq!(
+            decide("t", &tags(&["always", "nginx"]), &c2, &mut s2),
+            Decision::Skip(SkipReason::AlwaysSkipped)
+        );
     }
 
     #[test]
     fn never_skipped_by_default() {
         let c = cfg();
         let mut s = GateState::new(&c);
-        assert_eq!(decide("t", &tags(&["never", "nuke"]), &c, &mut s), Decision::Skip(SkipReason::Never));
+        assert_eq!(
+            decide("t", &tags(&["never", "nuke"]), &c, &mut s),
+            Decision::Skip(SkipReason::Never)
+        );
     }
 
     #[test]
     fn never_opts_in_via_other_tag() {
-        let c = FilterConfig { tags: tags(&["nuke"]), ..cfg() };
+        let c = FilterConfig {
+            tags: tags(&["nuke"]),
+            ..cfg()
+        };
         let mut s = GateState::new(&c);
-        assert_eq!(decide("t", &tags(&["never", "nuke"]), &c, &mut s), Decision::Run);
+        assert_eq!(
+            decide("t", &tags(&["never", "nuke"]), &c, &mut s),
+            Decision::Run
+        );
     }
 
     #[test]
     fn never_opts_in_via_never_name() {
-        let c = FilterConfig { tags: tags(&["never"]), ..cfg() };
+        let c = FilterConfig {
+            tags: tags(&["never"]),
+            ..cfg()
+        };
         let mut s = GateState::new(&c);
         assert_eq!(decide("t", &tags(&["never"]), &c, &mut s), Decision::Run);
     }
 
     #[test]
     fn start_at_task_skips_until_name_match() {
-        let c = FilterConfig { start_at_task: Some("middle".to_string()), ..cfg() };
+        let c = FilterConfig {
+            start_at_task: Some("middle".to_string()),
+            ..cfg()
+        };
         let mut s = GateState::new(&c);
-        assert_eq!(decide("first", &tags(&["a"]), &c, &mut s), Decision::Skip(SkipReason::BeforeStart));
+        assert_eq!(
+            decide("first", &tags(&["a"]), &c, &mut s),
+            Decision::Skip(SkipReason::BeforeStart)
+        );
         assert_eq!(decide("middle", &tags(&["a"]), &c, &mut s), Decision::Run);
         assert_eq!(decide("last", &tags(&["a"]), &c, &mut s), Decision::Run);
     }
 
     #[test]
     fn start_at_task_skips_always_tasks_before_match() {
-        let c = FilterConfig { start_at_task: Some("start".to_string()), ..cfg() };
+        let c = FilterConfig {
+            start_at_task: Some("start".to_string()),
+            ..cfg()
+        };
         let mut s = GateState::new(&c);
-        assert_eq!(decide("before", &tags(&["always"]), &c, &mut s), Decision::Skip(SkipReason::BeforeStart));
+        assert_eq!(
+            decide("before", &tags(&["always"]), &c, &mut s),
+            Decision::Skip(SkipReason::BeforeStart)
+        );
         assert_eq!(decide("start", &tags(&[]), &c, &mut s), Decision::Run);
     }
 
     #[test]
     fn start_at_task_stays_started_across_calls() {
-        let c = FilterConfig { start_at_task: Some("go".to_string()), ..cfg() };
+        let c = FilterConfig {
+            start_at_task: Some("go".to_string()),
+            ..cfg()
+        };
         let mut s = GateState::new(&c);
         let _ = decide("go", &[], &c, &mut s);
         assert!(s.started);

@@ -98,7 +98,11 @@ fn heredoc_delimiter(line: &str) -> Option<String> {
     } else {
         after.split(|c: char| c.is_whitespace()).next()?
     };
-    if raw.is_empty() { None } else { Some(raw.to_string()) }
+    if raw.is_empty() {
+        None
+    } else {
+        Some(raw.to_string())
+    }
 }
 
 fn token_depth_delta(word: &str, cmd_position: bool) -> i32 {
@@ -536,21 +540,21 @@ pub fn write_to_target(
             cmd.stdin(Stdio::piped());
             cmd.stdout(Stdio::piped());
             cmd.stderr(Stdio::piped());
-            let mut child = cmd.spawn().map_err(|e| {
-                format!("Failed to spawn write process: {}", e)
-            })?;
+            let mut child = cmd
+                .spawn()
+                .map_err(|e| format!("Failed to spawn write process: {}", e))?;
             {
                 let stdin = child
                     .stdin
                     .as_mut()
                     .ok_or("Failed to open stdin for write process")?;
-                stdin.write_all(bytes).map_err(|e| {
-                    format!("Failed to write to {}: {}", dest, e)
-                })?;
+                stdin
+                    .write_all(bytes)
+                    .map_err(|e| format!("Failed to write to {}: {}", dest, e))?;
             }
-            let output = child.wait_with_output().map_err(|e| {
-                format!("Failed to wait for write process: {}", e)
-            })?;
+            let output = child
+                .wait_with_output()
+                .map_err(|e| format!("Failed to wait for write process: {}", e))?;
             if !output.status.success() {
                 let stderr = String::from_utf8_lossy(&output.stderr);
                 return Err(format!(
@@ -577,11 +581,17 @@ pub fn write_to_target(
         {
             let stdin = child.stdin.take().ok_or("Failed to open stdin for write")?;
             let mut stdin = stdin;
-            stdin.write_all(bytes).map_err(|e| format!("Failed to write bytes to {}: {}", dest, e))?;
+            stdin
+                .write_all(bytes)
+                .map_err(|e| format!("Failed to write bytes to {}: {}", dest, e))?;
         }
-        let status = child.wait().map_err(|e| format!("Failed to wait on write process for {}: {}", dest, e))?;
+        let status = child
+            .wait()
+            .map_err(|e| format!("Failed to wait on write process for {}: {}", dest, e))?;
         if !status.success() {
-            return Err(format!("Failed to write {}: sh exited with status {}", dest, status).into());
+            return Err(
+                format!("Failed to write {}: sh exited with status {}", dest, status).into(),
+            );
         }
         Ok(())
     } else {
@@ -591,22 +601,18 @@ pub fn write_to_target(
                 .duration_since(std::time::UNIX_EPOCH)
                 .map(|d| d.as_nanos())
                 .unwrap_or(0);
-            let tmp_path = format!(
-                "/tmp/deploy-helper-{}-{}",
-                nanos,
-                std::process::id()
-            );
+            let tmp_path = format!("/tmp/deploy-helper-{}-{}", nanos, std::process::id());
 
-            let sftp = session.sftp().map_err(|e| {
-                format!("Failed to open SFTP session: {}", e)
-            })?;
+            let sftp = session
+                .sftp()
+                .map_err(|e| format!("Failed to open SFTP session: {}", e))?;
             {
-                let mut remote = sftp.create(Path::new(&tmp_path)).map_err(|e| {
-                    format!("Failed to write {}: {}", tmp_path, e)
-                })?;
-                remote.write_all(bytes).map_err(|e| {
-                    format!("Failed to write {}: {}", tmp_path, e)
-                })?;
+                let mut remote = sftp
+                    .create(Path::new(&tmp_path))
+                    .map_err(|e| format!("Failed to write {}: {}", tmp_path, e))?;
+                remote
+                    .write_all(bytes)
+                    .map_err(|e| format!("Failed to write {}: {}", tmp_path, e))?;
             }
 
             let inner = format!(
@@ -619,25 +625,21 @@ pub fn write_to_target(
             let (_stdout, stderr, code) =
                 execute_ssh_command(session, &wrapped, true, false, None, false)?;
             if code != 0 {
-                return Err(format!(
-                    "Failed to write {}: exit {}: {}",
-                    dest,
-                    code,
-                    stderr.trim()
-                )
-                .into());
+                return Err(
+                    format!("Failed to write {}: exit {}: {}", dest, code, stderr.trim()).into(),
+                );
             }
             return Ok(());
         }
-        let sftp = session.sftp().map_err(|e| {
-            format!("Failed to open SFTP session: {}", e)
-        })?;
-        let mut remote = sftp.create(Path::new(dest)).map_err(|e| {
-            format!("Failed to write {}: {}", dest, e)
-        })?;
-        remote.write_all(bytes).map_err(|e| {
-            format!("Failed to write {}: {}", dest, e)
-        })?;
+        let sftp = session
+            .sftp()
+            .map_err(|e| format!("Failed to open SFTP session: {}", e))?;
+        let mut remote = sftp
+            .create(Path::new(dest))
+            .map_err(|e| format!("Failed to write {}: {}", dest, e))?;
+        remote
+            .write_all(bytes)
+            .map_err(|e| format!("Failed to write {}: {}", dest, e))?;
         Ok(())
     }
 }
@@ -672,7 +674,10 @@ mod tests {
 
     #[test]
     fn test_heredoc_delimiter_single_quoted() {
-        assert_eq!(heredoc_delimiter("cat << 'EOF' > file"), Some("EOF".to_string()));
+        assert_eq!(
+            heredoc_delimiter("cat << 'EOF' > file"),
+            Some("EOF".to_string())
+        );
     }
 
     #[test]
@@ -705,7 +710,10 @@ mod tests {
     #[test]
     fn test_split_commands_multiple() {
         let input = "echo one\necho two\necho three";
-        assert_eq!(split_commands(input), vec!["echo one", "echo two", "echo three"]);
+        assert_eq!(
+            split_commands(input),
+            vec!["echo one", "echo two", "echo three"]
+        );
     }
 
     #[test]
@@ -723,7 +731,10 @@ mod tests {
     #[test]
     fn test_split_commands_heredoc_single_quoted() {
         let input = "cat << 'EOF' > /tmp/file\nline one\nline two\nEOF";
-        assert_eq!(split_commands(input), vec!["cat << 'EOF' > /tmp/file\nline one\nline two\nEOF"]);
+        assert_eq!(
+            split_commands(input),
+            vec!["cat << 'EOF' > /tmp/file\nline one\nline two\nEOF"]
+        );
     }
 
     #[test]
@@ -780,10 +791,7 @@ mod tests {
     #[test]
     fn test_split_commands_while_loop() {
         let input = "while true; do\n  echo hi\ndone";
-        assert_eq!(
-            split_commands(input),
-            vec!["while true; do\necho hi\ndone"]
-        );
+        assert_eq!(split_commands(input), vec!["while true; do\necho hi\ndone"]);
     }
 
     #[test]
@@ -840,19 +848,13 @@ mod tests {
     #[test]
     fn test_split_commands_keyword_in_single_quotes() {
         let input = "echo 'if foo'\necho next";
-        assert_eq!(
-            split_commands(input),
-            vec!["echo 'if foo'", "echo next"]
-        );
+        assert_eq!(split_commands(input), vec!["echo 'if foo'", "echo next"]);
     }
 
     #[test]
     fn test_split_commands_keyword_in_double_quotes() {
         let input = "echo \"if foo\"\necho next";
-        assert_eq!(
-            split_commands(input),
-            vec!["echo \"if foo\"", "echo next"]
-        );
+        assert_eq!(split_commands(input), vec!["echo \"if foo\"", "echo next"]);
     }
 
     #[test]
@@ -878,7 +880,10 @@ mod tests {
         let input = "existing=$(curl -s ... | grep -o '\"name\":\"sub\"' || true)\nif [ -z \"$existing\" ]; then\n  curl -X POST ...\n  sleep 30\nfi";
         assert_eq!(
             split_commands(input),
-            vec!["existing=$(curl -s ... | grep -o '\"name\":\"sub\"' || true)", "if [ -z \"$existing\" ]; then\ncurl -X POST ...\nsleep 30\nfi"]
+            vec![
+                "existing=$(curl -s ... | grep -o '\"name\":\"sub\"' || true)",
+                "if [ -z \"$existing\" ]; then\ncurl -X POST ...\nsleep 30\nfi"
+            ]
         );
     }
 
@@ -886,7 +891,8 @@ mod tests {
 
     #[test]
     fn test_wrap_become_sudo_with_password() {
-        let result = wrap_become_command("nginx -t && systemctl reload nginx", "sudo", Some("secret"));
+        let result =
+            wrap_become_command("nginx -t && systemctl reload nginx", "sudo", Some("secret"));
         assert_eq!(
             result,
             "printf '%s\\n' 'secret' | sudo -S -p '' sh -c 'nginx -t && systemctl reload nginx'"
@@ -908,7 +914,10 @@ mod tests {
     #[test]
     fn test_wrap_become_password_with_special_chars() {
         let result = wrap_become_command("id", "sudo", Some("p@ss'word"));
-        assert_eq!(result, "printf '%s\\n' 'p@ss'\\''word' | sudo -S -p '' sh -c 'id'");
+        assert_eq!(
+            result,
+            "printf '%s\\n' 'p@ss'\\''word' | sudo -S -p '' sh -c 'id'"
+        );
     }
 
     #[test]
@@ -937,10 +946,22 @@ mod tests {
         }
         let err = serde_yaml::from_str::<Vec<S>>(contents).unwrap_err();
         let out = annotate_yaml_error("setup.yml", contents, err);
-        assert!(out.contains("unquoted"), "missing plain-language hint in: {}", out);
+        assert!(
+            out.contains("unquoted"),
+            "missing plain-language hint in: {}",
+            out
+        );
         assert!(out.contains("line 2"), "missing line number in: {}", out);
-        assert!(out.contains("chdir: {{ app_path }}"), "missing source line in: {}", out);
-        assert!(!out.contains("invalid type: map"), "leaks raw serde_yaml jargon: {}", out);
+        assert!(
+            out.contains("chdir: {{ app_path }}"),
+            "missing source line in: {}",
+            out
+        );
+        assert!(
+            !out.contains("invalid type: map"),
+            "leaks raw serde_yaml jargon: {}",
+            out
+        );
     }
 
     #[test]

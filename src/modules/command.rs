@@ -20,7 +20,14 @@ fn handle_command_execution(
     let result = if is_localhost {
         utils::execute_local_command(command, use_shell, display_output, chdir, login_shell)
     } else {
-        utils::execute_ssh_command(session.unwrap(), command, use_shell, display_output, chdir, login_shell)
+        utils::execute_ssh_command(
+            session.unwrap(),
+            command,
+            use_shell,
+            display_output,
+            chdir,
+            login_shell,
+        )
     };
 
     match result {

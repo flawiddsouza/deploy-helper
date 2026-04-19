@@ -84,7 +84,11 @@ fn run_test_with_flags(
     if should_fail {
         assert!(output.status.code().unwrap() != 0);
     } else {
-        assert!(output.status.success(), "non-zero exit: stderr={}", String::from_utf8_lossy(&output.stderr));
+        assert!(
+            output.status.success(),
+            "non-zero exit: stderr={}",
+            String::from_utf8_lossy(&output.stderr)
+        );
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
@@ -429,11 +433,7 @@ fn copy_with_src() {
 #[test]
 fn copy_both_src_and_content_error() {
     setup();
-    run_tests_for_both_inventories(
-        "test-ymls/copy-both-src-and-content-error.yml",
-        true,
-        &[],
-    );
+    run_tests_for_both_inventories("test-ymls/copy-both-src-and-content-error.yml", true, &[]);
 }
 
 #[test]
@@ -449,21 +449,13 @@ fn copy_neither_src_nor_content_error() {
 #[test]
 fn template_missing_src_error() {
     setup();
-    run_tests_for_both_inventories(
-        "test-ymls/template-missing-src-error.yml",
-        true,
-        &[],
-    );
+    run_tests_for_both_inventories("test-ymls/template-missing-src-error.yml", true, &[]);
 }
 
 #[test]
 fn copy_missing_src_error() {
     setup();
-    run_tests_for_both_inventories(
-        "test-ymls/copy-missing-src-error.yml",
-        true,
-        &[],
-    );
+    run_tests_for_both_inventories("test-ymls/copy-missing-src-error.yml", true, &[]);
 }
 
 #[test]
@@ -480,11 +472,7 @@ fn template_with_become() {
 #[test]
 fn template_vars_in_src_and_dest() {
     setup();
-    run_tests_for_both_inventories(
-        "test-ymls/template-vars-in-src-and-dest.yml",
-        false,
-        &[],
-    );
+    run_tests_for_both_inventories("test-ymls/template-vars-in-src-and-dest.yml", false, &[]);
 }
 
 #[test]
