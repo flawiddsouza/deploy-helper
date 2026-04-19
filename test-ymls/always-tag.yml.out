@@ -1,0 +1,10 @@
+Starting deployment: Always tag
+
+Executing task: Reload nginx
+> echo reload
+reload
+
+Executing task: Issue TLS
+> echo tls
+tls
+

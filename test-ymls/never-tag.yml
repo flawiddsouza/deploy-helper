@@ -1,0 +1,10 @@
+- name: Never tag
+  hosts: test
+  tasks:
+    - name: Safe task
+      command: echo safe
+      tags: [safe]
+
+    - name: Dangerous task
+      command: echo nuke
+      tags: [never, nuke]

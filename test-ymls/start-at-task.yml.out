@@ -1,0 +1,10 @@
+Starting deployment: Start at task
+
+Executing task: Second
+> echo second
+second
+
+Executing task: Third
+> echo third
+third
+

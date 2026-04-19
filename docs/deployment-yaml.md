@@ -2,6 +2,8 @@
 
 A run is invoked as `deploy-helper <deploy.yml>`. The deploy file defines what to run; the inventory file (`servers.yml` by default, or `-i <file>`) defines where to run it.
 
+For CLI flags, extra-var input forms, and tag filtering, see [cli.md](cli.md).
+
 ## Inventory File
 
 Maps host names used in deploy files to connection details.
@@ -26,10 +28,10 @@ Fields per host:
 - `host:` - IP or hostname. The literal value `localhost` runs commands locally instead of over SSH.
 - `port:` - SSH port (default 22).
 - `user:` - SSH user. Required for non-localhost.
-- `password:` - SSH password (use `ssh_key_path:` instead where possible).
-- `ssh_key_path:` - path to the private key.
+- `password:` - SSH password. Prefer `ssh_key_path:` where possible.
+- `ssh_key_path:` - path to the private key. Tilde-expanded.
 
-`{{ var }}` placeholders in any of these are substituted from the current vars map (extra vars + deployment vars). The path in `ssh_key_path:` is tilde-expanded.
+`{{ var }}` placeholders in any of these are substituted from the current vars map.
 
 ## Deploy File Structure
 
@@ -55,10 +57,11 @@ Deployment fields:
 - `vars:` - vars set before the deployment's tasks run.
 - `chdir:` - default working directory for `shell:` and `command:` tasks. Tasks may override.
 - `login_shell:` - if true, `shell:` and `command:` run through a login shell (`$SHELL -l -i`) so `.bashrc`/`.zshrc` is loaded. Tasks may override.
+- `tags:` - tags merged into every task's effective tag set. See [cli.md#tags](cli.md#tags).
 
 ## Task Structure
 
-Each task has a `name:` and exactly one action key (`shell:`, `command:`, `template:`, `copy:`, `debug:`, or `include_tasks:`). Modifiers like `register:`, `when:`, `loop:`, `become:`, `vars:`, `chdir:`, `login_shell:` may be added.
+Each task has a `name:` and one action key (`shell:`, `command:`, `template:`, `copy:`, `debug:`, or `include_tasks:`). `debug:` is the one action that may be paired with another action on the same task; it runs first. Modifiers (`register:`, `when:`, `loop:`, `vars:`, `chdir:`, `login_shell:`, `become:`, `become_method:`, `tags:`) may be added to any task.
 
 ### `shell:`
 
@@ -128,8 +131,6 @@ Prints values from the current vars map. Useful for inspecting state mid-deploym
     msg: "Deploying {{ app_name }} to {{ env }}"
 ```
 
-`debug:` may be combined with another action on the same task; it runs first.
-
 ### `include_tasks:`
 
 Inlines tasks from another YAML file at this point in the deployment.
@@ -150,14 +151,15 @@ These can be set on any task:
 - `chdir: <path>` - working directory for `shell:` and `command:`. Falls back to the deployment-level `chdir:`.
 - `when: <expr>` - skip the task unless the expression evaluates true.
 - `loop: [...]` - run the action once per item; the current item is exposed as `{{ item }}`. List items may be scalars or maps (access fields as `{{ item.field }}`).
-- `become: true` - run as root. `become_method:` selects the elevation tool (`sudo` default, `doas`, or `su`). `become_password:` may be passed via extra vars; otherwise prompted interactively. `doas` is passwordless only.
+- `become: true` - run as root. `become_method:` selects the elevation tool (`sudo` default, `doas`, or `su`). See [cli.md#privilege-escalation-prompt](cli.md#privilege-escalation-prompt) for `become_password` handling.
 - `login_shell: true` - run `shell:` and `command:` through a login shell. Falls back to the deployment-level `login_shell:`.
+- `tags: [...]` - task-level tags; merged with deployment and `include_tasks` tags into the task's effective tag set. See [cli.md#tags](cli.md#tags).
 
 ## Vars and Templating
 
 Vars come from (later sources override earlier):
 
-1. `--extra-vars` / `-e` on the CLI (repeatable).
+1. `--extra-vars` / `-e` on the CLI (repeatable). See [cli.md#extra-vars](cli.md#extra-vars) for input forms.
 2. Deployment-level `vars:`.
 3. Task-level `vars:`.
 4. `register:` outputs from earlier tasks.
@@ -173,17 +175,3 @@ The `from_json` filter parses a JSON string into a value:
   debug:
     msg: "{{ parsed.Credentials.AccessKeyId }}"
 ```
-
-## Extra Vars
-
-`-e` accepts three forms (repeatable; later wins):
-
-```sh
-deploy-helper deploy.yml -e key=value -e 'a=1 b=2'
-deploy-helper deploy.yml -e '{"key": "value", "n": 3}'
-deploy-helper deploy.yml -e @vars.yml
-```
-
-- `key=value` (space-separated for multiple in one flag).
-- A JSON object string (must start with `{`).
-- `@<file>` to load a YAML file of vars.

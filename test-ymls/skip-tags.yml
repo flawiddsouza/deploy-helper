@@ -1,0 +1,14 @@
+- name: Skip tags test
+  hosts: test
+  tasks:
+    - name: Keep me
+      command: echo keep
+      tags: [keep]
+
+    - name: Skip me
+      command: echo skip
+      tags: [drop]
+
+    - name: Keep me too
+      command: echo keep2
+      tags: [keep]

@@ -1,0 +1,6 @@
+Starting deployment: Never tag
+
+Executing task: Safe task
+> echo safe
+safe
+

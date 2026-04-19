@@ -29,6 +29,7 @@ pub struct Task {
     pub become_method: Option<String>,
     pub template: Option<TemplateSpec>,
     pub copy: Option<CopySpec>,
+    pub tags: Option<Vec<String>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -42,4 +43,36 @@ pub struct CopySpec {
     pub src: Option<String>,
     pub content: Option<String>,
     pub dest: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn task_parses_tags_as_list() {
+        let yaml = "name: Example\nshell: echo hi\ntags: [build, web]\n";
+        let task: Task = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(
+            task.tags,
+            Some(vec!["build".to_string(), "web".to_string()])
+        );
+    }
+
+    #[test]
+    fn task_parses_tags_block_form() {
+        let yaml = "name: Example\nshell: echo hi\ntags:\n  - build\n  - web\n";
+        let task: Task = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(
+            task.tags,
+            Some(vec!["build".to_string(), "web".to_string()])
+        );
+    }
+
+    #[test]
+    fn task_without_tags_is_none() {
+        let yaml = "name: Example\nshell: echo hi\n";
+        let task: Task = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(task.tags, None);
+    }
 }

@@ -1,0 +1,11 @@
+- name: Inherit from deployment
+  hosts: test
+  tags: [web]
+  tasks:
+    - name: Build
+      command: echo build
+      tags: [build]
+
+    - name: Include web tasks
+      include_tasks: tags-inheritance.tag-include.yml
+      tags: [nginx]

@@ -1,0 +1,14 @@
+- name: Always tag
+  hosts: test
+  tasks:
+    - name: Reload nginx
+      command: echo reload
+      tags: [always]
+
+    - name: Write nginx config
+      command: echo nginx
+      tags: [nginx]
+
+    - name: Issue TLS
+      command: echo tls
+      tags: [tls]

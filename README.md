@@ -45,6 +45,10 @@ Builds and installs the `deploy-helper` binary to your Cargo bin directory, maki
 
 See [docs/deployment-yaml.md](docs/deployment-yaml.md).
 
+## CLI Reference
+
+See [docs/cli.md](docs/cli.md).
+
 ## Testing
 
 Tests are integration tests located in `tests/integration_test.rs`. Each test runs the binary against a YAML deployment file in `test-ymls/` and compares the output to a corresponding `.out` file.

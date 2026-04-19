@@ -1,0 +1,16 @@
+Starting deployment: Step test
+
+Perform task: First (N)o/(y)es/(c)ontinue: Executing task: First
+> echo first
+first
+
+Perform task: Second (N)o/(y)es/(c)ontinue: Skipping task: Second (step)
+
+Perform task: Third (N)o/(y)es/(c)ontinue: Executing task: Third
+> echo third
+third
+
+Executing task: Fourth
+> echo fourth
+fourth
+

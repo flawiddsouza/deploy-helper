@@ -1,0 +1,15 @@
+- name: List me
+  hosts: test
+  tags: [web]
+  tasks:
+    - name: Build
+      command: echo build
+      tags: [build]
+
+    - name: Install
+      command: echo install
+      tags: [install]
+
+    - name: Include extras
+      include_tasks: list-tasks.include.yml
+      tags: [extras]

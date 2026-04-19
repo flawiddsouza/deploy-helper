@@ -10,6 +10,7 @@ use serde_json::Value;
 use ssh2::Session;
 use std::path::Path;
 use std::process::exit;
+use modules::filter;
 
 #[derive(Debug, Deserialize)]
 struct ServerConfig {
@@ -38,39 +39,68 @@ impl TargetHost {
 }
 
 #[derive(Debug, Deserialize)]
-struct Deployment {
-    name: String,
-    hosts: String,
-    chdir: Option<String>,
-    login_shell: Option<bool>,
-    vars: Option<IndexMap<String, String>>,
-    tasks: Vec<common::Task>,
+pub(crate) struct Deployment {
+    pub(crate) name: String,
+    pub(crate) hosts: String,
+    pub(crate) chdir: Option<String>,
+    pub(crate) login_shell: Option<bool>,
+    pub(crate) vars: Option<IndexMap<String, String>>,
+    pub(crate) tags: Option<Vec<String>>,
+    pub(crate) tasks: Vec<common::Task>,
+}
+
+struct RunContext<'a> {
+    is_localhost: bool,
+    session: Option<&'a Session>,
+    vars_map: &'a mut IndexMap<String, Value>,
+    deploy_file_dir: &'a Path,
+    become_password: &'a mut Option<String>,
+    filter_config: &'a filter::FilterConfig,
+    filter_state: &'a mut filter::GateState,
+    step_state: &'a mut modules::step::StepState,
 }
 
 fn process_tasks(
+    ctx: &mut RunContext,
     tasks: &[common::Task],
-    is_localhost: bool,
-    session: Option<&Session>,
     dep_chdir: Option<&str>,
     dep_login_shell: bool,
-    vars_map: &mut IndexMap<String, Value>,
-    deploy_file_dir: &Path,
-    become_password: &mut Option<String>,
+    ancestor_tags: &[String],
 ) -> Result<(), Box<dyn std::error::Error>> {
     for task in tasks {
-        let task_name = utils::replace_placeholders(&task.name, vars_map);
+        let task_name = utils::replace_placeholders(&task.name, ctx.vars_map);
 
-        if !modules::when::process(&task.when, vars_map) {
+        let effective_tags = filter::merge_tags(ancestor_tags, task.tags.as_deref());
+
+        match filter::decide(&task_name, &effective_tags, ctx.filter_config, ctx.filter_state) {
+            filter::Decision::Run => {}
+            filter::Decision::Skip(_) => continue,
+        }
+
+        if !modules::when::process(&task.when, ctx.vars_map) {
             println!("{}", format!("Skipping task: {}\n", task_name).yellow());
             continue;
+        }
+
+        if ctx.step_state.should_prompt() {
+            match modules::step::prompt(&task_name)? {
+                modules::step::StepChoice::Run => {}
+                modules::step::StepChoice::Skip => {
+                    println!("{}", format!("Skipping task: {} (step)\n", task_name).yellow());
+                    continue;
+                }
+                modules::step::StepChoice::ContinueWithoutPrompt => {
+                    ctx.step_state.continue_in_deployment = true;
+                }
+            }
         }
 
         println!("{}", format!("Executing task: {}", task_name).cyan());
 
         if let Some(vars) = &task.vars {
             for (key, value) in vars {
-                let evaluated_value = utils::replace_placeholders_vars(&value, vars_map);
-                vars_map.insert(key.clone(), evaluated_value);
+                let evaluated_value = utils::replace_placeholders_vars(&value, ctx.vars_map);
+                ctx.vars_map.insert(key.clone(), evaluated_value);
             }
         }
 
@@ -79,7 +109,7 @@ fn process_tasks(
             .chdir
             .as_deref()
             .or(dep_chdir)
-            .map(|s| utils::replace_placeholders(s, vars_map));
+            .map(|s| utils::replace_placeholders(s, ctx.vars_map));
 
         let use_login_shell = task.login_shell.unwrap_or(dep_login_shell);
 
@@ -97,7 +127,7 @@ fn process_tasks(
 
         if task_become {
             if task_become_method == "doas" {
-                if vars_map
+                if ctx.vars_map
                     .get("become_password")
                     .and_then(|v| v.as_str())
                     .filter(|s| !s.is_empty())
@@ -108,35 +138,32 @@ fn process_tasks(
                             .into(),
                     );
                 }
-            } else if become_password.is_none() {
-                if let Some(pw) = vars_map.get("become_password").and_then(|v| v.as_str()) {
-                    *become_password = Some(pw.to_string());
+            } else if ctx.become_password.is_none() {
+                if let Some(pw) = ctx.vars_map.get("become_password").and_then(|v| v.as_str()) {
+                    *ctx.become_password = Some(pw.to_string());
                 } else {
-                    *become_password = Some(rpassword::prompt_password("BECOME password: ")?);
+                    *ctx.become_password = Some(rpassword::prompt_password("BECOME password: ")?);
                 }
             }
         }
 
-        // Debug print to verify vars_map
-        // println!("Vars map: {:?}", vars_map);
-
         let loop_items = task.r#loop.clone().unwrap_or_else(|| vec![Value::Null]);
 
         for item in loop_items {
-            vars_map.shift_remove("item");
+            ctx.vars_map.shift_remove("item");
 
             if !item.is_null() {
-                vars_map.insert("item".to_string(), item.clone());
+                ctx.vars_map.insert("item".to_string(), item.clone());
             }
 
             if let Some(debug) = &task.debug {
-                modules::debug::process(debug, vars_map);
+                modules::debug::process(debug, ctx.vars_map);
             }
 
             let task_become_password = if task_become_method == "doas" {
                 None
             } else {
-                become_password.as_deref().filter(|s| !s.is_empty())
+                ctx.become_password.as_deref().filter(|s| !s.is_empty())
             };
 
             if let Some(shell_command) = &task.shell {
@@ -144,12 +171,12 @@ fn process_tasks(
                 modules::command::process_shell_block(
                     shell_command,
                     display_segments,
-                    is_localhost,
-                    session,
+                    ctx.is_localhost,
+                    ctx.session,
                     task_chdir.as_deref(),
                     task.register.as_ref(),
                     use_login_shell,
-                    vars_map,
+                    ctx.vars_map,
                     task_become,
                     &task_become_method,
                     task_become_password,
@@ -160,12 +187,12 @@ fn process_tasks(
                 let commands = utils::split_commands(command);
                 modules::command::process_command(
                     commands,
-                    is_localhost,
-                    session,
+                    ctx.is_localhost,
+                    ctx.session,
                     task_chdir.as_deref(),
                     task.register.as_ref(),
                     use_login_shell,
-                    vars_map,
+                    ctx.vars_map,
                     task_become,
                     &task_become_method,
                     task_become_password,
@@ -175,10 +202,10 @@ fn process_tasks(
             if let Some(spec) = &task.template {
                 modules::template::process(
                     spec,
-                    deploy_file_dir,
-                    is_localhost,
-                    session,
-                    vars_map,
+                    ctx.deploy_file_dir,
+                    ctx.is_localhost,
+                    ctx.session,
+                    ctx.vars_map,
                     task_become,
                     &task_become_method,
                     task_become_password,
@@ -190,10 +217,10 @@ fn process_tasks(
                 modules::copy::process(
                     &task_name,
                     spec,
-                    deploy_file_dir,
-                    is_localhost,
-                    session,
-                    vars_map,
+                    ctx.deploy_file_dir,
+                    ctx.is_localhost,
+                    ctx.session,
+                    ctx.vars_map,
                     task_become,
                     &task_become_method,
                     task_become_password,
@@ -206,18 +233,15 @@ fn process_tasks(
                     "{}",
                     format!("Including tasks from: {}\n", include_file).blue()
                 );
-                let include_file_path = deploy_file_dir.join(include_file);
+                let include_file_path = ctx.deploy_file_dir.join(include_file);
                 let included_tasks =
                     modules::include_tasks::process(include_file_path.to_str().unwrap());
                 process_tasks(
+                    ctx,
                     &included_tasks,
-                    is_localhost,
-                    session,
                     task_chdir.as_deref(),
                     use_login_shell,
-                    vars_map,
-                    deploy_file_dir,
-                    become_password,
+                    &effective_tags,
                 )?;
             }
         }
@@ -255,6 +279,42 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .help("The server configuration YAML file")
                 .num_args(1),
         )
+        .arg(
+            Arg::new("tags")
+                .short('t')
+                .long("tags")
+                .value_name("TAGS")
+                .help("Only run tasks whose effective tags intersect this list (comma-separated; repeatable)")
+                .num_args(1)
+                .action(clap::ArgAction::Append),
+        )
+        .arg(
+            Arg::new("skip_tags")
+                .long("skip-tags")
+                .value_name("TAGS")
+                .help("Skip tasks whose effective tags intersect this list (wins over --tags)")
+                .num_args(1)
+                .action(clap::ArgAction::Append),
+        )
+        .arg(
+            Arg::new("start_at_task")
+                .long("start-at-task")
+                .value_name("NAME")
+                .help("Skip tasks until one whose name matches exactly; then run from there")
+                .num_args(1),
+        )
+        .arg(
+            Arg::new("step")
+                .long("step")
+                .help("Prompt before each task")
+                .action(clap::ArgAction::SetTrue),
+        )
+        .arg(
+            Arg::new("list_tasks")
+                .long("list-tasks")
+                .help("Print what would run, then exit without running")
+                .action(clap::ArgAction::SetTrue),
+        )
         .get_matches();
 
     let deploy_file = matches.get_one::<String>("deploy_file").unwrap();
@@ -267,6 +327,35 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let server_file = matches
         .get_one::<String>("server_file")
         .unwrap_or(&default_server_file);
+
+    fn split_tags(values: Vec<&str>) -> Vec<String> {
+        values
+            .into_iter()
+            .flat_map(|v| v.split(','))
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect()
+    }
+
+    let tags_raw: Vec<&str> = matches
+        .get_many::<String>("tags")
+        .unwrap_or_default()
+        .map(|s| s.as_str())
+        .collect();
+    let skip_tags_raw: Vec<&str> = matches
+        .get_many::<String>("skip_tags")
+        .unwrap_or_default()
+        .map(|s| s.as_str())
+        .collect();
+
+    let filter_config = filter::FilterConfig {
+        tags: split_tags(tags_raw),
+        skip_tags: split_tags(skip_tags_raw),
+        start_at_task: matches.get_one::<String>("start_at_task").cloned(),
+    };
+
+    let step_enabled = matches.get_flag("step");
+    let list_tasks_enabled = matches.get_flag("list_tasks");
 
     let server_config: ServerConfig = utils::read_yaml(server_file);
     let deployment_docs: Vec<Vec<Deployment>> = utils::read_yaml_multi(deploy_file);
@@ -304,7 +393,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let deploy_file_path = Path::new(deploy_file);
     let deploy_file_dir = deploy_file_path.parent().unwrap_or(Path::new("."));
 
+    if list_tasks_enabled {
+        modules::list_tasks::run(&deployments, &filter_config, deploy_file_dir, &vars_map)?;
+        return Ok(());
+    }
+
+    let mut filter_state = filter::GateState::new(&filter_config);
+    let mut step_state = modules::step::StepState::new(step_enabled);
+
     for dep in deployments {
+        step_state.reset_for_deployment();
+
         if let Some(dep_vars) = &dep.vars {
             for (key, value) in dep_vars {
                 let evaluated_value = utils::replace_placeholders_vars(&value, &vars_map);
@@ -320,6 +419,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         } else {
             println!("{}", format!("Starting deployment: {}\n", dep_name).green());
         }
+
+        let dep_ancestor_tags: Vec<String> = dep.tags.clone().unwrap_or_default();
 
         let hosts: Vec<&str> = dep.hosts.split(',').map(|s| s.trim()).collect();
 
@@ -355,15 +456,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     None
                 };
 
-                process_tasks(
-                    &dep.tasks,
+                let mut ctx = RunContext {
                     is_localhost,
-                    session.as_ref(),
+                    session: session.as_ref(),
+                    vars_map: &mut vars_map,
+                    deploy_file_dir,
+                    become_password: &mut become_password,
+                    filter_config: &filter_config,
+                    filter_state: &mut filter_state,
+                    step_state: &mut step_state,
+                };
+                process_tasks(
+                    &mut ctx,
+                    &dep.tasks,
                     dep.chdir.as_deref(),
                     dep.login_shell.unwrap_or(false),
-                    &mut vars_map,
-                    deploy_file_dir,
-                    &mut become_password,
+                    &dep_ancestor_tags,
                 )?;
             } else {
                 eprintln!(

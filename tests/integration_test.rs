@@ -43,32 +43,56 @@ fn start_docker_container() {
 }
 
 fn run_test(yml_file: &str, should_fail: bool, extra_vars: &[&str], inventory_file: &str) {
-    let mut args = vec!["run", "--quiet", "--", yml_file];
-    for ev in extra_vars {
-        args.push("--extra-vars");
-        args.push(ev);
-    }
-    args.extend_from_slice(&["--inventory", inventory_file]);
+    run_test_with_flags(yml_file, should_fail, extra_vars, inventory_file, &[], None);
+}
 
-    let output = Command::new("cargo")
-        .args(&args)
-        .output()
-        .expect("Failed to execute command");
+fn run_test_with_flags(
+    yml_file: &str,
+    should_fail: bool,
+    extra_vars: &[&str],
+    inventory_file: &str,
+    extra_flags: &[&str],
+    stdin_input: Option<&str>,
+) {
+    let mut args: Vec<String> = vec!["run".into(), "--quiet".into(), "--".into(), yml_file.into()];
+    for ev in extra_vars {
+        args.push("--extra-vars".into());
+        args.push((*ev).into());
+    }
+    args.push("--inventory".into());
+    args.push(inventory_file.into());
+    for f in extra_flags {
+        args.push((*f).into());
+    }
+
+    let mut cmd = Command::new("cargo");
+    cmd.args(args.iter().map(|s| s.as_str()));
+    if stdin_input.is_some() {
+        cmd.stdin(std::process::Stdio::piped());
+    }
+    cmd.stdout(std::process::Stdio::piped());
+    cmd.stderr(std::process::Stdio::piped());
+
+    let mut child = cmd.spawn().expect("Failed to spawn cargo");
+    if let Some(input) = stdin_input {
+        use std::io::Write;
+        let mut stdin = child.stdin.take().expect("stdin");
+        stdin.write_all(input.as_bytes()).expect("write stdin");
+    }
+    let output = child.wait_with_output().expect("Failed to wait on cargo");
 
     if should_fail {
         assert!(output.status.code().unwrap() != 0);
     } else {
-        assert!(output.status.success());
+        assert!(output.status.success(), "non-zero exit: stderr={}", String::from_utf8_lossy(&output.stderr));
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-
     let full_output = format!("{}{}", stdout, stderr);
 
     let expected_output =
         fs::read_to_string(&format!("{}.out", yml_file)).expect("Failed to read expected output");
-
     assert_eq!(full_output, expected_output);
 }
 
@@ -470,5 +494,238 @@ fn copy_content_preserves_whitespace() {
         "test-ymls/copy-content-preserves-whitespace.yml",
         false,
         &[],
+    );
+}
+
+#[test]
+fn tags_filter_runs_only_matching() {
+    setup();
+    run_test_with_flags(
+        "test-ymls/tags-filter.yml",
+        false,
+        &[],
+        "tests/servers/local.yml",
+        &["--tags", "build"],
+        None,
+    );
+    run_test_with_flags(
+        "test-ymls/tags-filter.yml",
+        false,
+        &[],
+        "tests/servers/remote.yml",
+        &["--tags", "build"],
+        None,
+    );
+}
+
+#[test]
+fn skip_tags_excludes_matches() {
+    setup();
+    run_test_with_flags(
+        "test-ymls/skip-tags.yml",
+        false,
+        &[],
+        "tests/servers/local.yml",
+        &["--skip-tags", "drop"],
+        None,
+    );
+    run_test_with_flags(
+        "test-ymls/skip-tags.yml",
+        false,
+        &[],
+        "tests/servers/remote.yml",
+        &["--skip-tags", "drop"],
+        None,
+    );
+}
+
+#[test]
+fn skip_tags_wins_over_tags_flag() {
+    setup();
+    run_test_with_flags(
+        "test-ymls/tags-and-skip-tags.yml",
+        false,
+        &[],
+        "tests/servers/local.yml",
+        &["--tags", "web", "--skip-tags", "tls"],
+        None,
+    );
+    run_test_with_flags(
+        "test-ymls/tags-and-skip-tags.yml",
+        false,
+        &[],
+        "tests/servers/remote.yml",
+        &["--tags", "web", "--skip-tags", "tls"],
+        None,
+    );
+}
+
+#[test]
+fn always_tag_bypasses_tags_filter() {
+    setup();
+    run_test_with_flags(
+        "test-ymls/always-tag.yml",
+        false,
+        &[],
+        "tests/servers/local.yml",
+        &["--tags", "tls"],
+        None,
+    );
+    run_test_with_flags(
+        "test-ymls/always-tag.yml",
+        false,
+        &[],
+        "tests/servers/remote.yml",
+        &["--tags", "tls"],
+        None,
+    );
+}
+
+#[test]
+fn never_tag_hidden_by_default() {
+    setup();
+    run_test_with_flags(
+        "test-ymls/never-tag.yml",
+        false,
+        &[],
+        "tests/servers/local.yml",
+        &[],
+        None,
+    );
+}
+
+#[test]
+fn never_tag_opt_in_via_other_tag() {
+    setup();
+    run_test_with_flags(
+        "test-ymls/never-tag-optin.yml",
+        false,
+        &[],
+        "tests/servers/local.yml",
+        &["--tags", "nuke"],
+        None,
+    );
+}
+
+#[test]
+fn start_at_task_skips_before_match() {
+    setup();
+    run_test_with_flags(
+        "test-ymls/start-at-task.yml",
+        false,
+        &[],
+        "tests/servers/local.yml",
+        &["--start-at-task", "Second"],
+        None,
+    );
+    run_test_with_flags(
+        "test-ymls/start-at-task.yml",
+        false,
+        &[],
+        "tests/servers/remote.yml",
+        &["--start-at-task", "Second"],
+        None,
+    );
+}
+
+#[test]
+fn tags_inheritance_flows_from_include() {
+    setup();
+    run_test_with_flags(
+        "test-ymls/tags-inheritance.yml",
+        false,
+        &[],
+        "tests/servers/local.yml",
+        &["--tags", "nginx"],
+        None,
+    );
+    run_test_with_flags(
+        "test-ymls/tags-inheritance.yml",
+        false,
+        &[],
+        "tests/servers/remote.yml",
+        &["--tags", "nginx"],
+        None,
+    );
+}
+
+#[test]
+fn step_prompt_y_n_c() {
+    setup();
+    run_test_with_flags(
+        "test-ymls/step.yml",
+        false,
+        &[],
+        "tests/servers/local.yml",
+        &["--step"],
+        Some("y\nn\nc\n"),
+    );
+    run_test_with_flags(
+        "test-ymls/step.yml",
+        false,
+        &[],
+        "tests/servers/remote.yml",
+        &["--step"],
+        Some("y\nn\nc\n"),
+    );
+}
+
+#[test]
+fn list_tasks_prints_tree_with_effective_tags() {
+    setup();
+    run_test_with_flags(
+        "test-ymls/list-tasks.yml",
+        false,
+        &[],
+        "tests/servers/local.yml",
+        &["--list-tasks"],
+        None,
+    );
+    run_test_with_flags(
+        "test-ymls/list-tasks.yml",
+        false,
+        &[],
+        "tests/servers/remote.yml",
+        &["--list-tasks"],
+        None,
+    );
+}
+
+#[test]
+fn list_tasks_respects_tags_filter() {
+    setup();
+    run_test_with_flags(
+        "test-ymls/list-tasks-filtered.yml",
+        false,
+        &[],
+        "tests/servers/local.yml",
+        &["--list-tasks", "--tags", "extras"],
+        None,
+    );
+}
+
+#[test]
+fn list_tasks_renders_names_and_matches_start_at_task() {
+    setup();
+    run_test_with_flags(
+        "test-ymls/list-tasks-templated.yml",
+        false,
+        &["env=prod"],
+        "tests/servers/local.yml",
+        &["--list-tasks", "--start-at-task", "Deploy prod"],
+        None,
+    );
+}
+
+#[test]
+fn list_tasks_templates_deployment_vars_in_names() {
+    setup();
+    run_test_with_flags(
+        "test-ymls/list-tasks-dep-vars.yml",
+        false,
+        &[],
+        "tests/servers/local.yml",
+        &["--list-tasks"],
+        None,
     );
 }

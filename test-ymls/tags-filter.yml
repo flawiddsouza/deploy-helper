@@ -1,0 +1,14 @@
+- name: Tags filter test
+  hosts: test
+  tasks:
+    - name: Install step
+      command: echo install
+      tags: [install]
+
+    - name: Build step
+      command: echo build
+      tags: [build]
+
+    - name: Nginx step
+      command: echo nginx
+      tags: [web, nginx]

@@ -1,0 +1,14 @@
+- name: Step test
+  hosts: test
+  tasks:
+    - name: First
+      command: echo first
+
+    - name: Second
+      command: echo second
+
+    - name: Third
+      command: echo third
+
+    - name: Fourth
+      command: echo fourth

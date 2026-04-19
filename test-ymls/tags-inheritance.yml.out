@@ -1,0 +1,14 @@
+Starting deployment: Inherit from deployment
+
+Executing task: Include web tasks
+Including tasks from: tags-inheritance.tag-include.yml
+
+Executing task: Included task A
+> echo included_a
+included_a
+
+Executing task: Included task B
+> echo included_b
+included_b
+
+

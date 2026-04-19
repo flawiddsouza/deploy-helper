@@ -1,0 +1,6 @@
+- name: Extra A
+  command: echo a
+
+- name: Extra B
+  command: echo b
+  tags: [b]

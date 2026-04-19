@@ -1,0 +1,6 @@
+- name: Included task A
+  command: echo included_a
+
+- name: Included task B
+  command: echo included_b
+  tags: [tls]

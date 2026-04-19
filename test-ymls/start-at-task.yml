@@ -1,0 +1,11 @@
+- name: Start at task
+  hosts: test
+  tasks:
+    - name: First
+      command: echo first
+
+    - name: Second
+      command: echo second
+
+    - name: Third
+      command: echo third

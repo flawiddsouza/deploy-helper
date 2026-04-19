@@ -1,0 +1,10 @@
+Starting deployment: Skip tags test
+
+Executing task: Keep me
+> echo keep
+keep
+
+Executing task: Keep me too
+> echo keep2
+keep2
+

@@ -1,0 +1,6 @@
+Starting deployment: Combined filter
+
+Executing task: Web nginx
+> echo webnginx
+webnginx
+

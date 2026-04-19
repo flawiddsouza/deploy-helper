@@ -1,0 +1,11 @@
+- name: List me
+  hosts: test
+  tasks:
+    - name: Setup {{ env }}
+      command: echo setup
+
+    - name: Deploy {{ env }}
+      command: echo deploy
+
+    - name: Finalize {{ env }}
+      command: echo finalize

@@ -1,0 +1,14 @@
+- name: Combined filter
+  hosts: test
+  tasks:
+    - name: Web nginx
+      command: echo webnginx
+      tags: [web, nginx]
+
+    - name: Web tls
+      command: echo webtls
+      tags: [web, tls]
+
+    - name: Other
+      command: echo other
+      tags: [other]

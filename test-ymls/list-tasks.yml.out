@@ -1,0 +1,7 @@
+Starting deployment: List me
+  Build           TAGS: [web, build]
+  Install         TAGS: [web, install]
+  Include extras  TAGS: [web, extras]
+    Extra A         TAGS: [web, extras]
+    Extra B         TAGS: [web, extras, b]
+
