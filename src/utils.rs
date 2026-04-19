@@ -6,7 +6,7 @@ use serde_json::Value;
 use simple_expand_tilde::expand_tilde;
 use ssh2::Session;
 use std::fs;
-use std::io::prelude::*;
+use std::io::{self, prelude::*};
 use std::net::TcpStream;
 use std::path::{Path, PathBuf};
 use std::process::{exit, Command, Stdio};
@@ -293,7 +293,17 @@ fn annotate_yaml_error(filename: &str, contents: &str, err: serde_yaml::Error) -
 
 fn read_file_or_exit(filename: &str) -> String {
     fs::read_to_string(filename).unwrap_or_else(|e| {
-        eprintln!("{}", format!("Failed to read {}: {}", filename, e).red());
+        let msg = if e.kind() == io::ErrorKind::NotFound {
+            let location = if Path::new(filename).parent() == Some(Path::new("")) {
+                " in current directory"
+            } else {
+                " at given path"
+            };
+            format!("{}: not found{}", filename, location)
+        } else {
+            format!("Failed to read {}: {}", filename, e)
+        };
+        eprintln!("{}", msg.red());
         exit(1);
     })
 }

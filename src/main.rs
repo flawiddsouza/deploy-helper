@@ -375,6 +375,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let step_enabled = matches.get_flag("step");
     let list_tasks_enabled = matches.get_flag("list_tasks");
 
+    if !Path::new(server_file).exists() {
+        let location = if Path::new(server_file).parent() == Some(Path::new("")) {
+            " in current directory"
+        } else {
+            " at given path"
+        };
+        let hint = if server_file == "servers.yml" {
+            " (use -i/--inventory to specify a different file)"
+        } else {
+            ""
+        };
+        eprintln!("{}", format!("{}: not found{}{}", server_file, location, hint).red());
+        exit(1);
+    }
     let server_config: ServerConfig = utils::read_yaml(server_file);
     let deployment_docs: Vec<Vec<Deployment>> = utils::read_yaml_multi(deploy_file);
     let deployments = deployment_docs.into_iter().flatten().collect::<Vec<_>>();
