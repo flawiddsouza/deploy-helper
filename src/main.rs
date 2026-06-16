@@ -163,6 +163,7 @@ fn process_tasks(
         }
 
         let use_login_shell = task.login_shell.unwrap_or(dep_login_shell);
+        let no_log = task.no_log.unwrap_or(false);
 
         let task_become = task.r#become.or(dep_become).unwrap_or(false);
         let task_become_method = task
@@ -204,7 +205,7 @@ fn process_tasks(
             }
 
             if let Some(debug) = &task.debug {
-                modules::debug::process(debug, ctx.vars_map);
+                modules::debug::process(debug, ctx.vars_map, no_log);
             }
 
             let task_become_password = ctx.become_password.as_deref().filter(|s| !s.is_empty());
@@ -223,6 +224,7 @@ fn process_tasks(
                     task_become,
                     &task_become_method,
                     task_become_password,
+                    no_log,
                 )?;
             }
 
@@ -239,6 +241,7 @@ fn process_tasks(
                     task_become,
                     &task_become_method,
                     task_become_password,
+                    no_log,
                 )?;
             }
 

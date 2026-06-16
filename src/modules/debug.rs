@@ -5,7 +5,10 @@ use serde_json::Value;
 use crate::common::Debug;
 use crate::utils;
 
-pub fn process(debug: &Debug, vars_map: &IndexMap<String, Value>) {
+pub fn process(debug: &Debug, vars_map: &IndexMap<String, Value>, no_log: bool) {
+    if no_log {
+        return;
+    }
     println!("{}", "Debug:".blue());
     for (key, msg) in debug.0.iter() {
         println!("{}", format!("{}:", key).blue());

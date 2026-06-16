@@ -1,0 +1,6 @@
+- name: Test no_log suppresses shell output on a remote target
+  hosts: test
+  tasks:
+    - name: Run a command whose output should be hidden on the remote target
+      no_log: true
+      shell: echo REMOTE_NOLOG_SECRET

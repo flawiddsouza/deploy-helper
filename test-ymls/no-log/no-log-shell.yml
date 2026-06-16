@@ -1,0 +1,6 @@
+- name: Test no_log suppresses shell output
+  hosts: test
+  tasks:
+    - name: Run a command whose output should be hidden
+      no_log: true
+      shell: echo NOLOG_SHELL_SECRET

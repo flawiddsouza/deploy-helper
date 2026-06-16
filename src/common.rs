@@ -20,6 +20,7 @@ pub struct Task {
     pub creates: Option<String>,
     pub removes: Option<String>,
     pub register: Option<String>,
+    pub no_log: Option<bool>,
     pub debug: Option<Debug>,
     pub vars: Option<IndexMap<String, String>>,
     pub chdir: Option<String>,

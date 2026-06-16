@@ -153,16 +153,19 @@ pub fn process_shell_block(
     become_enabled: bool,
     become_method: &str,
     become_password: Option<&str>,
+    no_log: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    for seg in &display_segments {
-        let substituted = utils::replace_placeholders(seg, vars_map);
-        println!("{}", format!("> {}", substituted).magenta());
+    if !no_log {
+        for seg in &display_segments {
+            let substituted = utils::replace_placeholders(seg, vars_map);
+            println!("{}", format!("> {}", substituted).magenta());
+        }
     }
 
     let substituted_source = utils::replace_placeholders(source, vars_map);
     let exec_source = format!("set -e\n{}", substituted_source);
 
-    let display_output = register.is_none();
+    let display_output = register.is_none() && !no_log;
 
     if become_enabled && become_method == "doas" && become_password.is_some() {
         return handle_doas_pty_execution(
@@ -210,12 +213,15 @@ pub fn process_command(
     become_enabled: bool,
     become_method: &str,
     become_password: Option<&str>,
+    no_log: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     for cmd in commands {
         let substituted_cmd = utils::replace_placeholders(&cmd, vars_map);
-        println!("{}", format!("> {}", substituted_cmd).magenta());
+        if !no_log {
+            println!("{}", format!("> {}", substituted_cmd).magenta());
+        }
 
-        let display_output = register.is_none();
+        let display_output = register.is_none() && !no_log;
 
         if become_enabled && become_method == "doas" && become_password.is_some() {
             handle_doas_pty_execution(

@@ -149,6 +149,7 @@ The path is resolved relative to the deploy file's directory. Included tasks see
 These can be set on any task:
 
 - `register: <name>` - capture the action's result (`stdout`, `stderr`, `rc`) into a var. For `template:` and `copy:` the captured value is empty (`{stdout: "", stderr: "", rc: 0}`) since there is no command output.
+- `no_log: true` - suppress this task's command echo and output (and `debug:` output) so secrets aren't printed. `copy:`/`template:` are unaffected since they never print their content. The `Executing task:` line still shows.
 - `vars:` - set vars before the action runs. Available for substitution in the same task.
 - `chdir: <path>` - working directory for `shell:` and `command:`. Falls back to the deployment-level `chdir:`.
 - `when: <expr>` - skip the task unless the expression evaluates true.

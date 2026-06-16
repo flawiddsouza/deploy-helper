@@ -1047,3 +1047,95 @@ mod idempotency {
         );
     }
 }
+
+// no_log suppresses a task's command echo and output; run against localhost (no Docker).
+mod logging {
+    use super::*;
+
+    #[test]
+    fn no_log_suppresses_shell_output() {
+        run_test_check(
+            "test-ymls/no-log/no-log-shell.yml",
+            false,
+            &[],
+            "tests/servers/local.yml",
+            |output| {
+                assert!(
+                    !output.contains("NOLOG_SHELL_SECRET"),
+                    "no_log should suppress the shell echo and output, but the secret leaked:\n{}",
+                    output
+                );
+            },
+        );
+    }
+
+    #[test]
+    fn no_log_suppresses_command_output() {
+        run_test_check(
+            "test-ymls/no-log/no-log-command.yml",
+            false,
+            &[],
+            "tests/servers/local.yml",
+            |output| {
+                assert!(
+                    !output.contains("NOLOG_COMMAND_SECRET"),
+                    "no_log should suppress the command echo and output, but the secret leaked:\n{}",
+                    output
+                );
+            },
+        );
+    }
+
+    #[test]
+    fn no_log_suppresses_debug_output() {
+        run_test_check(
+            "test-ymls/no-log/no-log-debug.yml",
+            false,
+            &[],
+            "tests/servers/local.yml",
+            |output| {
+                assert!(
+                    !output.contains("NOLOG_DEBUG_SECRET"),
+                    "no_log should suppress debug output, but the secret leaked:\n{}",
+                    output
+                );
+            },
+        );
+    }
+
+    #[test]
+    fn output_shown_without_no_log() {
+        run_test_check(
+            "test-ymls/no-log/no-log-absent.yml",
+            false,
+            &[],
+            "tests/servers/local.yml",
+            |output| {
+                assert!(
+                    output.contains("NOLOG_VISIBLE_OUTPUT"),
+                    "without no_log the command output should be shown, but it is missing:\n{}",
+                    output
+                );
+            },
+        );
+    }
+
+    // Exercises no_log over the SSH path (display_output suppression in execute_ssh_command).
+    #[test]
+    fn no_log_suppresses_output_on_remote_target() {
+        setup();
+        run_test_check(
+            "test-ymls/no-log/no-log-shell-remote.yml",
+            false,
+            &[],
+            "tests/servers/remote-ssh.yml",
+            |output| {
+                assert!(
+                    !output.contains("REMOTE_NOLOG_SECRET"),
+                    "no_log should suppress shell output over SSH, but the secret leaked:\n{}",
+                    output
+                );
+            },
+        );
+    }
+}

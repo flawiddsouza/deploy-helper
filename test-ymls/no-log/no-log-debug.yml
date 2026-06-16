@@ -1,0 +1,9 @@
+- name: Test no_log suppresses debug output
+  hosts: test
+  vars:
+    secret_value: NOLOG_DEBUG_SECRET
+  tasks:
+    - name: Show a sensitive variable
+      no_log: true
+      debug:
+        msg: "{{ secret_value }}"

@@ -1,0 +1,5 @@
+- name: Test output is shown without no_log
+  hosts: test
+  tasks:
+    - name: Run a command whose output is shown
+      shell: echo NOLOG_VISIBLE_OUTPUT
