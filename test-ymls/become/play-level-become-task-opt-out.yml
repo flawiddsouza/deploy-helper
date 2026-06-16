@@ -1,0 +1,7 @@
+- name: Test a task opting out of deployment-level become
+  hosts: test
+  become: true
+  tasks:
+    - name: Report the effective user without escalation
+      become: false
+      shell: whoami

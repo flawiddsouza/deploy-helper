@@ -472,6 +472,78 @@ mod privilege {
     }
 
     #[test]
+    fn play_level_become_applies_to_tasks() {
+        setup();
+        run_test_check(
+            "test-ymls/become/play-level-become.yml",
+            false,
+            &["become_password="],
+            "tests/servers/become-nopass.yml",
+            |output| {
+                assert!(
+                    output.contains("root") && !output.contains("nopass"),
+                    "expected whoami to report 'root' (deployment-level become), got:\n{}",
+                    output
+                );
+            },
+        );
+    }
+
+    #[test]
+    fn play_level_become_inherited_by_included_tasks() {
+        setup();
+        run_test_check(
+            "test-ymls/become/play-level-become-include.yml",
+            false,
+            &["become_password="],
+            "tests/servers/become-nopass.yml",
+            |output| {
+                assert!(
+                    output.contains("root") && !output.contains("nopass"),
+                    "expected included task's whoami to report 'root' (deployment become inherited through include_tasks), got:\n{}",
+                    output
+                );
+            },
+        );
+    }
+
+    #[test]
+    fn play_level_become_method_applies_to_tasks() {
+        setup();
+        run_test_check(
+            "test-ymls/become/play-level-become-method.yml",
+            false,
+            &[],
+            "tests/servers/become-doas.yml",
+            |output| {
+                assert!(
+                    output.contains("root") && !output.contains("doasuser"),
+                    "expected whoami to report 'root' via deployment-level become_method: doas, got:\n{}",
+                    output
+                );
+            },
+        );
+    }
+
+    #[test]
+    fn play_level_become_can_be_overridden_by_task() {
+        setup();
+        run_test_check(
+            "test-ymls/become/play-level-become-task-opt-out.yml",
+            false,
+            &[],
+            "tests/servers/become-nopass.yml",
+            |output| {
+                assert!(
+                    output.contains("nopass") && !output.contains("root"),
+                    "expected whoami to report 'nopass' (task became: false overrides deployment become), got:\n{}",
+                    output
+                );
+            },
+        );
+    }
+
+    #[test]
     fn become_with_password() {
         setup();
         run_test(

@@ -1,0 +1,6 @@
+- name: Test deployment-level become through include
+  hosts: test
+  become: true
+  tasks:
+    - name: Include the privileged subtasks
+      include_tasks: play-level-become.include.yml

@@ -1,0 +1,2 @@
+- name: Report the effective user in an included task
+  shell: whoami

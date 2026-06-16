@@ -53,6 +53,8 @@ pub(crate) struct Deployment {
     pub(crate) hosts: String,
     pub(crate) chdir: Option<String>,
     pub(crate) login_shell: Option<bool>,
+    pub(crate) r#become: Option<bool>,
+    pub(crate) become_method: Option<String>,
     pub(crate) vars: Option<IndexMap<String, String>>,
     pub(crate) tags: Option<Vec<String>>,
     pub(crate) tasks: Vec<common::Task>,
@@ -74,6 +76,8 @@ fn process_tasks(
     tasks: &[common::Task],
     dep_chdir: Option<&str>,
     dep_login_shell: bool,
+    dep_become: Option<bool>,
+    dep_become_method: Option<&str>,
     ancestor_tags: &[String],
 ) -> Result<(), Box<dyn std::error::Error>> {
     for task in tasks {
@@ -136,8 +140,13 @@ fn process_tasks(
 
         let use_login_shell = task.login_shell.unwrap_or(dep_login_shell);
 
-        let task_become = task.r#become.unwrap_or(false);
-        let task_become_method = task.become_method.as_deref().unwrap_or("sudo").to_string();
+        let task_become = task.r#become.or(dep_become).unwrap_or(false);
+        let task_become_method = task
+            .become_method
+            .as_deref()
+            .or(dep_become_method)
+            .unwrap_or("sudo")
+            .to_string();
 
         // Validate become_method early before asking for password
         if task_become && !matches!(task_become_method.as_str(), "sudo" | "doas" | "su") {
@@ -251,6 +260,8 @@ fn process_tasks(
                     &included_tasks,
                     task_chdir.as_deref(),
                     use_login_shell,
+                    dep_become,
+                    dep_become_method,
                     &effective_tags,
                 )?;
             }
@@ -498,6 +509,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     &dep.tasks,
                     dep.chdir.as_deref(),
                     dep.login_shell.unwrap_or(false),
+                    dep.r#become,
+                    dep.become_method.as_deref(),
                     &dep_ancestor_tags,
                 )?;
             } else {

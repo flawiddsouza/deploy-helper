@@ -1,0 +1,7 @@
+- name: Test deployment-level become_method
+  hosts: test
+  become: true
+  become_method: doas
+  tasks:
+    - name: Report the effective user via whoami
+      shell: whoami

@@ -57,6 +57,8 @@ Deployment fields:
 - `vars:` - vars set before the deployment's tasks run.
 - `chdir:` - default working directory for `shell:` and `command:` tasks. Tasks may override.
 - `login_shell:` - if true, `shell:` and `command:` run through a login shell (`$SHELL -l -i`) so `.bashrc`/`.zshrc` is loaded. Tasks may override.
+- `become:` - if true, every task runs with privilege escalation by default. Tasks may override.
+- `become_method:` - default elevation tool (`sudo`, `doas`, or `su`) for the deployment's tasks; applies where `become:` is in effect. Tasks may override.
 - `tags:` - tags merged into every task's effective tag set. See [cli.md#tags](cli.md#tags).
 
 ## Task Structure
@@ -151,7 +153,7 @@ These can be set on any task:
 - `chdir: <path>` - working directory for `shell:` and `command:`. Falls back to the deployment-level `chdir:`.
 - `when: <expr>` - skip the task unless the expression evaluates true.
 - `loop: [...]` - run the action once per item; the current item is exposed as `{{ item }}`. List items may be scalars or maps (access fields as `{{ item.field }}`).
-- `become: true` - run as root. `become_method:` selects the elevation tool (`sudo` default, `doas`, or `su`). See [cli.md#privilege-escalation-prompt](cli.md#privilege-escalation-prompt) for `become_password` handling.
+- `become: true` - run as root. `become_method:` selects the elevation tool (`sudo` default, `doas`, or `su`). Both fall back to the deployment-level `become:`/`become_method:`. See [cli.md#privilege-escalation-prompt](cli.md#privilege-escalation-prompt) for `become_password` handling.
 - `login_shell: true` - run `shell:` and `command:` through a login shell. Falls back to the deployment-level `login_shell:`.
 - `tags: [...]` - task-level tags; merged with deployment and `include_tasks` tags into the task's effective tag set. See [cli.md#tags](cli.md#tags).
 
