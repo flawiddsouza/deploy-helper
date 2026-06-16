@@ -1,0 +1,6 @@
+- name: Test creates runs when the path is absent
+  hosts: test
+  tasks:
+    - name: Echo a marker that should run
+      creates: tests/mocks/does-not-exist-xyz
+      command: echo CREATES_MARKER

@@ -955,3 +955,95 @@ mod execution {
         );
     }
 }
+
+// creates/removes idempotency guards run against localhost, so no Docker/SSH needed.
+mod idempotency {
+    use super::*;
+
+    #[test]
+    fn creates_skips_task_when_path_exists() {
+        run_test_check(
+            "test-ymls/creates-removes/creates-skip.yml",
+            false,
+            &[],
+            "tests/servers/local.yml",
+            |output| {
+                assert!(
+                    !output.contains("CREATES_MARKER"),
+                    "task should have been skipped (creates path exists), but it ran:\n{}",
+                    output
+                );
+            },
+        );
+    }
+
+    #[test]
+    fn creates_runs_task_when_path_absent() {
+        run_test_check(
+            "test-ymls/creates-removes/creates-run.yml",
+            false,
+            &[],
+            "tests/servers/local.yml",
+            |output| {
+                assert!(
+                    output.contains("CREATES_MARKER"),
+                    "task should have run (creates path absent), but the marker is missing:\n{}",
+                    output
+                );
+            },
+        );
+    }
+
+    #[test]
+    fn removes_runs_task_when_path_exists() {
+        run_test_check(
+            "test-ymls/creates-removes/removes-run.yml",
+            false,
+            &[],
+            "tests/servers/local.yml",
+            |output| {
+                assert!(
+                    output.contains("REMOVES_MARKER"),
+                    "task should have run (removes path exists), but the marker is missing:\n{}",
+                    output
+                );
+            },
+        );
+    }
+
+    #[test]
+    fn removes_skips_task_when_path_absent() {
+        run_test_check(
+            "test-ymls/creates-removes/removes-skip.yml",
+            false,
+            &[],
+            "tests/servers/local.yml",
+            |output| {
+                assert!(
+                    !output.contains("REMOVES_MARKER"),
+                    "task should have been skipped (removes path absent), but it ran:\n{}",
+                    output
+                );
+            },
+        );
+    }
+
+    // Exercises path_exists_on_target's remote/SSH branch (Docker container as root).
+    #[test]
+    fn creates_skips_task_on_remote_target() {
+        setup();
+        run_test_check(
+            "test-ymls/creates-removes/creates-skip-remote.yml",
+            false,
+            &[],
+            "tests/servers/remote-ssh.yml",
+            |output| {
+                assert!(
+                    !output.contains("REMOTE_CREATES_MARKER"),
+                    "task should have been skipped (creates path exists on remote), but it ran:\n{}",
+                    output
+                );
+            },
+        );
+    }
+}

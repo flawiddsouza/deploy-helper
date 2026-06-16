@@ -1,0 +1,6 @@
+- name: Test creates skips when the path exists
+  hosts: test
+  tasks:
+    - name: Echo a marker that should be skipped
+      creates: tests/mocks/ls-dir/file1.txt
+      shell: echo CREATES_MARKER

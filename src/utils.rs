@@ -532,6 +532,23 @@ pub fn execute_local_command(
     Ok((stdout_str, stderr_str, exit_status))
 }
 
+// Returns true if `path` exists on the target (localhost or the remote session),
+// checked with `test -e`. Backs the `creates:`/`removes:` task guards.
+pub fn path_exists_on_target(
+    path: &str,
+    is_localhost: bool,
+    session: Option<&Session>,
+) -> Result<bool, Box<dyn std::error::Error>> {
+    let cmd = format!("test -e {}", shell_escape(path));
+    let (_stdout, _stderr, exit_status) = if is_localhost {
+        execute_local_command(&cmd, true, false, None, false)?
+    } else {
+        let session = session.ok_or("path_exists_on_target: remote target requires session")?;
+        execute_ssh_command(session, &cmd, true, false, None, false)?
+    };
+    Ok(exit_status == 0)
+}
+
 pub fn execute_ssh_doas_with_pty(
     session: &Session,
     command: &str,

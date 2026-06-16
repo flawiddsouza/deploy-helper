@@ -1,0 +1,6 @@
+- name: Test creates skips on a remote target when the path exists
+  hosts: test
+  tasks:
+    - name: Echo a marker that should be skipped on the remote target
+      creates: /etc/passwd
+      shell: echo REMOTE_CREATES_MARKER

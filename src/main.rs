@@ -100,6 +100,30 @@ fn process_tasks(
             continue;
         }
 
+        // Idempotency guards: skip when the `creates:` path already exists, or when the
+        // `removes:` path is already absent. Both are checked on the target.
+        if let Some(creates) = &task.creates {
+            let path = utils::replace_placeholders(creates, ctx.vars_map);
+            if utils::path_exists_on_target(&path, ctx.is_localhost, ctx.session)? {
+                println!(
+                    "{}",
+                    format!("Skipping task: {} (creates: {} exists)\n", task_name, path).yellow()
+                );
+                continue;
+            }
+        }
+
+        if let Some(removes) = &task.removes {
+            let path = utils::replace_placeholders(removes, ctx.vars_map);
+            if !utils::path_exists_on_target(&path, ctx.is_localhost, ctx.session)? {
+                println!(
+                    "{}",
+                    format!("Skipping task: {} (removes: {} absent)\n", task_name, path).yellow()
+                );
+                continue;
+            }
+        }
+
         if ctx.step_state.should_prompt() {
             match modules::step::prompt(&task_name)? {
                 modules::step::StepChoice::Run => {}

@@ -1,0 +1,6 @@
+- name: Test removes runs when the path exists
+  hosts: test
+  tasks:
+    - name: Echo a marker that should run
+      removes: tests/mocks/ls-dir/file1.txt
+      shell: echo REMOVES_MARKER

@@ -1,0 +1,6 @@
+- name: Test removes skips when the path is absent
+  hosts: test
+  tasks:
+    - name: Echo a marker that should be skipped
+      removes: tests/mocks/does-not-exist-xyz
+      shell: echo REMOVES_MARKER

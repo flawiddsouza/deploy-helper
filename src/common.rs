@@ -17,6 +17,8 @@ pub struct Task {
     pub name: String,
     pub shell: Option<String>,
     pub command: Option<String>,
+    pub creates: Option<String>,
+    pub removes: Option<String>,
     pub register: Option<String>,
     pub debug: Option<Debug>,
     pub vars: Option<IndexMap<String, String>>,
