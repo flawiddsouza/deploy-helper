@@ -16,6 +16,6 @@ indexmap = { version = "2.6.0", features = ["serde"] }
 simple-expand-tilde = "0.4.4"
 clap = "4.5.20"
 rpassword = "7.4.0"
+expectrl = "0.8"
 
 [dev-dependencies]
-expectrl = "0.8"

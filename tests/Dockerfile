@@ -22,6 +22,9 @@ RUN adduser -D -s /bin/sh withpass && \
 RUN adduser -D -s /bin/sh doasuser && \
     echo "doasuser:password" | chpasswd && \
     echo "permit nopass doasuser" > /etc/doas.conf && \
+    adduser -D -s /bin/sh doaswithpass && \
+    echo "doaswithpass:password" | chpasswd && \
+    echo "permit doaswithpass" >> /etc/doas.conf && \
     chown root:root /etc/doas.conf && \
     chmod 400 /etc/doas.conf
 

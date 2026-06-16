@@ -532,6 +532,171 @@ pub fn execute_local_command(
     Ok((stdout_str, stderr_str, exit_status))
 }
 
+pub fn execute_ssh_doas_with_pty(
+    session: &Session,
+    command: &str,
+    password: &str,
+    display_output: bool,
+    chdir: Option<&str>,
+    login_shell: bool,
+) -> Result<(String, String, i32), Box<dyn std::error::Error>> {
+    session.set_blocking(true);
+    let mut channel = session.channel_session()?;
+    channel.request_pty("xterm", None, None)?;
+
+    let final_cmd = if login_shell {
+        let base = if let Some(dir) = chdir {
+            format!("cd {} && {}", shell_escape(dir), command)
+        } else {
+            command.to_string()
+        };
+        let sh_arg = format!("exec \"$SHELL\" -l -i -c {}", shell_escape(&base));
+        format!("sh -c {}", shell_escape(&sh_arg))
+    } else if let Some(dir) = chdir {
+        format!("cd {} && {}", shell_escape(dir), command)
+    } else {
+        command.to_string()
+    };
+
+    channel.exec(&final_cmd)?;
+
+    let mut stdout_buf = [0u8; 1024];
+    let mut stdout = String::new();
+    // doas flushes any input typed before it prints its prompt, so the password
+    // must be sent only after the prompt appears -- writing it up front gets
+    // discarded and doas blocks forever waiting for input.
+    let mut password_sent = false;
+
+    loop {
+        match channel.read(&mut stdout_buf) {
+            Ok(n) if n > 0 => {
+                let output = String::from_utf8_lossy(&stdout_buf[..n]);
+                stdout.push_str(&output);
+                if display_output {
+                    print!("{}", output.white());
+                }
+                if !password_sent && stdout.to_lowercase().contains("password") {
+                    channel.write_all(format!("{}\n", password).as_bytes())?;
+                    channel.flush()?;
+                    password_sent = true;
+                }
+            }
+            Ok(_) => {}
+            Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
+            Err(_) => break,
+        }
+        if channel.eof() {
+            break;
+        }
+    }
+
+    channel.wait_close()?;
+    let exit_code = channel.exit_status()?;
+
+    let stdout = stdout.trim_end_matches(['\n', '\r']).to_string();
+    Ok((stdout, String::new(), exit_code))
+}
+
+#[cfg(unix)]
+pub fn execute_local_doas_with_pty(
+    command: &str,
+    password: &str,
+    display_output: bool,
+    chdir: Option<&str>,
+    login_shell: bool,
+) -> Result<(String, String, i32), Box<dyn std::error::Error>> {
+    use expectrl::{
+        process::{unix::WaitStatus, Healthcheck},
+        Eof, Expect,
+    };
+
+    let mut cmd = std::process::Command::new("sh");
+    if login_shell {
+        cmd.arg("-c")
+            .arg(format!("exec \"$SHELL\" -l -i -c {}", shell_escape(command)));
+    } else {
+        cmd.arg("-c").arg(command);
+    }
+    if let Some(dir) = chdir {
+        cmd.current_dir(dir);
+    }
+
+    let mut session = expectrl::Session::spawn(cmd)?;
+    // doas discards input typed before its prompt appears, so wait for the
+    // prompt before sending the password instead of writing it up front.
+    let prompt = session.expect("password")?;
+    session.send_line(password)?;
+
+    // `expect` consumes the bytes up to and including the match, so the Eof
+    // capture alone would drop the doas prompt. Join the prompt bytes with
+    // everything read afterwards so the captured stream matches
+    // execute_ssh_doas_with_pty, which keeps the whole PTY stream.
+    let rest = session.expect(Eof)?;
+    let mut combined_bytes = prompt.as_bytes().to_vec();
+    combined_bytes.extend_from_slice(rest.as_bytes());
+    let combined = String::from_utf8_lossy(&combined_bytes).into_owned();
+
+    if display_output {
+        print!("{}", combined.white());
+    }
+
+    let exit_code = loop {
+        match session.get_status() {
+            Ok(WaitStatus::Exited(_, code)) => break code,
+            Ok(WaitStatus::Signaled(_, _, _)) => break 1,
+            // Other states (still running, stopped, continued) -- keep polling.
+            Ok(_) => std::thread::sleep(std::time::Duration::from_millis(10)),
+            // A status error (e.g. the child was already reaped) would otherwise
+            // loop forever, so surface it as a task failure instead.
+            Err(e) => return Err(e.into()),
+        }
+    };
+
+    Ok((combined.trim_end_matches(['\n', '\r']).to_string(), String::new(), exit_code))
+}
+
+// Writes `bytes` to a privileged `dest` on localhost via doas+password. doas
+// needs a tty, so the bytes are staged to a user-owned temp file first and then
+// copied into place under a PTY-authenticated doas (mirrors the remote path).
+#[cfg(unix)]
+fn write_local_doas(
+    bytes: &[u8],
+    dest: &str,
+    password: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let tmp_path = format!("/tmp/deploy-helper-{}-{}", nanos, std::process::id());
+    std::fs::write(&tmp_path, bytes)
+        .map_err(|e| format!("Failed to write {}: {}", tmp_path, e))?;
+
+    let inner = format!(
+        "cp {tmp} {dst}",
+        tmp = shell_escape(&tmp_path),
+        dst = shell_escape(dest)
+    );
+    let doas_cmd = wrap_become_command(&inner, "doas", None);
+    let result = execute_local_doas_with_pty(&doas_cmd, password, false, None, false);
+    let _ = std::fs::remove_file(&tmp_path);
+
+    let (out, _stderr, code) = result?;
+    if code != 0 {
+        return Err(format!("Failed to write {}: exit {}: {}", dest, code, out.trim()).into());
+    }
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn write_local_doas(
+    _bytes: &[u8],
+    _dest: &str,
+    _password: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    Err("doas with become_password is not supported on non-Unix platforms".into())
+}
+
 pub fn write_to_target(
     bytes: &[u8],
     dest: &str,
@@ -541,8 +706,19 @@ pub fn write_to_target(
     become_method: &str,
     become_password: Option<&str>,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    // doas can't take a piped password (needs a tty), so it routes through a
+    // PTY helper instead of the standard wrap_become_command path below.
+    let doas_pw = if become_enabled && become_method == "doas" {
+        become_password.filter(|s| !s.is_empty())
+    } else {
+        None
+    };
+
     if is_localhost {
         if become_enabled {
+            if let Some(password) = doas_pw {
+                return write_local_doas(bytes, dest, password);
+            }
             let inner = format!("cat > {}", shell_escape(dest));
             let wrapped = wrap_become_command(&inner, become_method, become_password);
             let mut cmd = Command::new("sh");
@@ -630,6 +806,19 @@ pub fn write_to_target(
                 tmp = shell_escape(&tmp_path),
                 dst = shell_escape(dest)
             );
+
+            if let Some(password) = doas_pw {
+                let doas_cmd = wrap_become_command(&inner, "doas", None);
+                let (out, _stderr, code) =
+                    execute_ssh_doas_with_pty(session, &doas_cmd, password, false, None, false)?;
+                if code != 0 {
+                    return Err(
+                        format!("Failed to write {}: exit {}: {}", dest, code, out.trim()).into(),
+                    );
+                }
+                return Ok(());
+            }
+
             let wrapped = wrap_become_command(&inner, become_method, become_password);
 
             let (_stdout, stderr, code) =

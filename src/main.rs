@@ -149,23 +149,13 @@ fn process_tasks(
         }
 
         if task_become {
-            if task_become_method == "doas" {
-                if ctx
-                    .vars_map
-                    .get("become_password")
-                    .and_then(|v| v.as_str())
-                    .filter(|s| !s.is_empty())
-                    .is_some()
-                {
-                    return Err(
-                        "become_method 'doas' does not support password via become_password (doas requires a tty). Configure passwordless doas or use sudo/su instead."
-                            .into(),
-                    );
-                }
-            } else if ctx.become_password.is_none() {
+            if ctx.become_password.is_none() {
                 if let Some(pw) = ctx.vars_map.get("become_password").and_then(|v| v.as_str()) {
+                    // An explicitly provided become_password (even empty, meaning
+                    // passwordless) is used as-is; only an absent var prompts.
                     *ctx.become_password = Some(pw.to_string());
-                } else {
+                } else if task_become_method != "doas" {
+                    // doas defaults to passwordless -- only prompt for sudo/su
                     *ctx.become_password = Some(rpassword::prompt_password("BECOME password: ")?);
                 }
             }
@@ -184,11 +174,7 @@ fn process_tasks(
                 modules::debug::process(debug, ctx.vars_map);
             }
 
-            let task_become_password = if task_become_method == "doas" {
-                None
-            } else {
-                ctx.become_password.as_deref().filter(|s| !s.is_empty())
-            };
+            let task_become_password = ctx.become_password.as_deref().filter(|s| !s.is_empty());
 
             if let Some(shell_command) = &task.shell {
                 let display_segments = utils::split_commands(shell_command);

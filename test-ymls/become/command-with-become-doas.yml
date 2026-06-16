@@ -1,0 +1,7 @@
+- name: Test become doas with password via command module
+  hosts: test
+  tasks:
+    - name: Run whoami via doas command
+      become: true
+      become_method: doas
+      command: whoami

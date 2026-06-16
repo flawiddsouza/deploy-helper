@@ -179,6 +179,51 @@ fn run_test_with_flags_both_inventories(
     );
 }
 
+fn run_test_check<F>(
+    yml_file: &str,
+    should_fail: bool,
+    extra_vars: &[&str],
+    inventory_file: &str,
+    check: F,
+) where
+    F: Fn(&str),
+{
+    let mut args: Vec<String> = vec!["run".into(), "--quiet".into(), "--".into(), yml_file.into()];
+    for ev in extra_vars {
+        args.push("--extra-vars".into());
+        args.push((*ev).into());
+    }
+    args.push("--inventory".into());
+    args.push(inventory_file.into());
+
+    let output = Command::new("cargo")
+        .args(args.iter().map(|s| s.as_str()))
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .output()
+        .expect("Failed to spawn cargo");
+
+    if should_fail {
+        assert!(
+            output.status.code().unwrap() != 0,
+            "expected failure but command succeeded"
+        );
+    } else {
+        assert!(
+            output.status.success(),
+            "non-zero exit\nstderr: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    let full_output = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    check(&full_output);
+}
+
 mod vars {
     use super::*;
 
@@ -482,13 +527,38 @@ mod privilege {
     }
 
     #[test]
-    fn become_doas_with_password_error() {
+    fn become_doas_with_password() {
         setup();
-        run_test(
-            "test-ymls/become/become-doas-with-password-error.yml",
-            true,
-            &["become_password=secret"],
-            "tests/servers/local.yml",
+        run_test_check(
+            "test-ymls/become/become-doas-with-password.yml",
+            false,
+            &["become_password=password"],
+            "tests/servers/become-doas-withpass.yml",
+            |output| {
+                assert!(
+                    output.contains("root"),
+                    "expected whoami output 'root' in:\n{}",
+                    output
+                );
+            },
+        );
+    }
+
+    #[test]
+    fn command_with_become_doas() {
+        setup();
+        run_test_check(
+            "test-ymls/become/command-with-become-doas.yml",
+            false,
+            &["become_password=password"],
+            "tests/servers/become-doas-withpass.yml",
+            |output| {
+                assert!(
+                    output.contains("root"),
+                    "expected whoami output 'root' in:\n{}",
+                    output
+                );
+            },
         );
     }
 
@@ -574,6 +644,29 @@ mod file_ops {
             false,
             &["become_password="],
             "tests/servers/become-nopass.yml",
+        );
+    }
+
+    #[test]
+    fn template_with_become_doas() {
+        setup();
+        run_test_check(
+            "test-ymls/file-ops/template-with-become-doas.yml",
+            false,
+            &["become_password=password"],
+            "tests/servers/become-doas-withpass.yml",
+            |output| {
+                assert!(
+                    output.contains("root"),
+                    "expected 'root' as file owner in:\n{}",
+                    output
+                );
+                assert!(
+                    output.contains("owner=root"),
+                    "expected template content 'owner=root' in:\n{}",
+                    output
+                );
+            },
         );
     }
 

@@ -137,7 +137,7 @@ Tasks with `become: true` elevate via `sudo` (default), `doas`, or `su`. If the 
    ```
    The value is reused for every subsequent `become:` task in the same run.
 
-`doas` is passwordless only. An empty `become_password=` is accepted; a non-empty value with `doas` is an error.
+`doas` runs passwordless by default, so it is never asked for at the `BECOME password:` prompt. To use a doas rule that requires a password, pass it explicitly with `-e become_password=...`; deploy-helper feeds it to `doas` over a PTY (doas opens `/dev/tty` directly and ignores piped input). An empty `become_password=` is treated as passwordless.
 
 ## Exit status
 
