@@ -6,7 +6,10 @@ edition = "2021"
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
 serde_yaml = "0.9"
-ssh2 = "0.9.4"
+# On Windows, libssh2-sys defaults to the WinCNG crypto backend, which can't complete
+# a key exchange with modern OpenSSH (9.6+ strict-kex on Ubuntu 26.04). Force the OpenSSL
+# backend (openssl-on-win32) and build it from source (vendored-openssl). No-op on Linux.
+ssh2 = { version = "0.9.5", features = ["vendored-openssl", "openssl-on-win32"] }
 colored = "2.0"
 minijinja = "2.4.0"
 serde_json = "1.0.132"
