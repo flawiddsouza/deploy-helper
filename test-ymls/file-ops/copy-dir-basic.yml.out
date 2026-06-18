@@ -1,0 +1,14 @@
+Starting deployment: Copy directory
+
+Executing task: Copy directory contents
+> [copy dir] test-ymls/file-ops/copy-dir-src -> /tmp/deploy-helper-test-copy-dir
+  (3 files into 2 dirs)
+
+Executing task: Read top-level file
+> cat /tmp/deploy-helper-test-copy-dir/alpha.txt
+alpha
+
+Executing task: Read nested file
+> cat /tmp/deploy-helper-test-copy-dir/nested/gamma.txt
+gamma
+

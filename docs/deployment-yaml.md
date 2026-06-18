@@ -106,7 +106,7 @@ Renders a Jinja-style template file and writes it to a destination.
 
 ### `copy:`
 
-Writes a file from a static source or inline content.
+Writes a file from a static source or inline content, or copies a directory's contents recursively.
 
 ```yaml
 - name: Static file copy
@@ -119,9 +119,18 @@ Writes a file from a static source or inline content.
     content: |
       APP_PORT={{ app_port }}
     dest: "{{ app_path }}/.env"
+
+- name: Recursive directory copy
+  copy:
+    src: files/site
+    dest: /var/www/site
 ```
 
 Exactly one of `src:` or `content:` must be provided. `src:` is copied byte-for-byte without rendering. `content:` is rendered through MiniJinja.
+
+When `src:` is a directory, its contents are copied recursively into `dest:` (like `cp -r src/. dest/`). Missing directories are created and matching files are overwritten, but unrelated files already in `dest:` are left untouched (nothing is deleted).
+
+Symlinks inside `src:` are followed, not preserved: a link is copied as the file or directory it points to. A symlink that forms a cycle is not detected and will make the copy fail.
 
 ### `debug:`
 

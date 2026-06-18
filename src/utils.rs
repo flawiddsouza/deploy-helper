@@ -860,6 +860,129 @@ pub fn write_to_target(
     }
 }
 
+/// Recursively walk `base`, collecting remote directory paths and (local file, remote dest)
+/// pairs. The CONTENTS of `base` are placed under `dest_dir` (like `cp -r base/. dest/`).
+fn collect_dir_tree(
+    base: &Path,
+    cur: &Path,
+    dest_dir: &str,
+    dirs: &mut Vec<String>,
+    files: &mut Vec<(PathBuf, String)>,
+) -> io::Result<()> {
+    let mut entries: Vec<_> = fs::read_dir(cur)?.collect::<Result<_, _>>()?;
+    entries.sort_by_key(|e| e.path());
+    for entry in entries {
+        let path = entry.path();
+        let rel = path.strip_prefix(base).unwrap_or(path.as_path());
+        let rel_str = rel.to_string_lossy().replace('\\', "/");
+        let remote = format!("{}/{}", dest_dir.trim_end_matches('/'), rel_str);
+        if path.is_dir() {
+            dirs.push(remote.clone());
+            collect_dir_tree(base, &path, dest_dir, dirs, files)?;
+        } else {
+            files.push((path, remote));
+        }
+    }
+    Ok(())
+}
+
+/// Copy a local directory's CONTENTS into `dest_dir` on the target. Overlay semantics:
+/// creates missing dirs, overwrites matching files, leaves unrelated files alone (never
+/// deletes). Reuses write_to_target per file so become/SFTP handling is identical to a
+/// single-file copy.
+pub fn write_dir_to_target(
+    src_dir: &Path,
+    dest_dir: &str,
+    is_localhost: bool,
+    session: Option<&Session>,
+    become_enabled: bool,
+    become_method: &str,
+    become_password: Option<&str>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let mut dirs: Vec<String> = vec![dest_dir.trim_end_matches('/').to_string()];
+    let mut files: Vec<(PathBuf, String)> = Vec::new();
+    collect_dir_tree(src_dir, src_dir, dest_dir, &mut dirs, &mut files)
+        .map_err(|e| format!("Failed to read source dir {}: {}", src_dir.display(), e))?;
+
+    // 1. Create the directory skeleton (one mkdir -p for all dirs; -p makes order
+    // moot). Run it through the same execution paths the per-file writes use rather
+    // than Rust's fs, so path resolution (e.g. /tmp on Windows/MSYS2) and become
+    // handling stay identical: fs::create_dir_all would resolve /tmp to a different
+    // place than the `sh` that writes the files, leaving the writes with no parent dir.
+    let escaped: Vec<String> = dirs.iter().map(|d| shell_escape(d)).collect();
+    let mkdir = format!("mkdir -p {}", escaped.join(" "));
+
+    // doas reads its password from /dev/tty, so a doas-with-password mkdir must go
+    // through a PTY (same as the per-file writes), not the piped wrap_become path.
+    let doas_pw = if become_enabled && become_method == "doas" {
+        become_password.filter(|s| !s.is_empty())
+    } else {
+        None
+    };
+
+    let (out, stderr, code) = if let Some(password) = doas_pw {
+        let doas_cmd = wrap_become_command(&mkdir, "doas", None);
+        if is_localhost {
+            #[cfg(unix)]
+            {
+                execute_local_doas_with_pty(&doas_cmd, password, false, None, false)?
+            }
+            #[cfg(not(unix))]
+            {
+                return Err(
+                    "doas with become_password is not supported on non-Unix platforms".into(),
+                );
+            }
+        } else {
+            let session = session.ok_or("write_dir_to_target: remote target requires session")?;
+            execute_ssh_doas_with_pty(session, &doas_cmd, password, false, None, false)?
+        }
+    } else {
+        let cmd = if become_enabled {
+            wrap_become_command(&mkdir, become_method, become_password)
+        } else {
+            mkdir
+        };
+        if is_localhost {
+            execute_local_command(&cmd, true, false, None, false)?
+        } else {
+            let session = session.ok_or("write_dir_to_target: remote target requires session")?;
+            execute_ssh_command(session, &cmd, true, false, None, false)?
+        }
+    };
+
+    if code != 0 {
+        // The doas-PTY path merges stderr into stdout, so fall back to it when stderr is empty.
+        let detail = if stderr.trim().is_empty() {
+            out.trim()
+        } else {
+            stderr.trim()
+        };
+        return Err(format!("Failed to create dirs under {}: {}", dest_dir, detail).into());
+    }
+
+    // 2. Write each file through the shared single-file path.
+    for (local, remote) in &files {
+        let bytes =
+            fs::read(local).map_err(|e| format!("Failed to read {}: {}", local.display(), e))?;
+        write_to_target(
+            &bytes,
+            remote,
+            is_localhost,
+            session,
+            become_enabled,
+            become_method,
+            become_password,
+        )?;
+    }
+
+    println!(
+        "{}",
+        format!("  ({} files into {} dirs)", files.len(), dirs.len()).bright_black()
+    );
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1217,5 +1340,64 @@ mod tests {
         let dir = Path::new("/some/deploy");
         let resolved = resolve_src_path(dir, "/etc/x.conf");
         assert_eq!(resolved, PathBuf::from("/etc/x.conf"));
+    }
+
+    // collect_dir_tree — uses Rust's own fs to build/read the tree so the test is
+    // portable (no shell, no /tmp resolution differences).
+
+    fn scratch_dir(tag: &str) -> PathBuf {
+        let base = std::env::temp_dir().join(format!("dh-cdt-{}-{}", tag, std::process::id()));
+        let _ = fs::remove_dir_all(&base);
+        base
+    }
+
+    #[test]
+    fn test_collect_dir_tree_maps_nested_paths() {
+        let base = scratch_dir("nested");
+        fs::create_dir_all(base.join("sub")).unwrap();
+        fs::write(base.join("a.txt"), b"a").unwrap();
+        fs::write(base.join("sub/b.txt"), b"b").unwrap();
+
+        // Mirror write_dir_to_target: the dest dir itself seeds `dirs`.
+        let mut dirs = vec!["/dest".to_string()];
+        let mut files = Vec::new();
+        collect_dir_tree(&base, &base, "/dest", &mut dirs, &mut files).unwrap();
+
+        assert_eq!(dirs, vec!["/dest".to_string(), "/dest/sub".to_string()]);
+        let remote: Vec<&str> = files.iter().map(|(_, r)| r.as_str()).collect();
+        assert_eq!(remote, vec!["/dest/a.txt", "/dest/sub/b.txt"]);
+
+        fs::remove_dir_all(&base).unwrap();
+    }
+
+    #[test]
+    fn test_collect_dir_tree_empty_dir_yields_no_files() {
+        let base = scratch_dir("empty");
+        fs::create_dir_all(&base).unwrap();
+
+        let mut dirs = vec!["/dest".to_string()];
+        let mut files = Vec::new();
+        collect_dir_tree(&base, &base, "/dest", &mut dirs, &mut files).unwrap();
+
+        assert_eq!(dirs, vec!["/dest".to_string()]);
+        assert!(files.is_empty());
+
+        fs::remove_dir_all(&base).unwrap();
+    }
+
+    #[test]
+    fn test_collect_dir_tree_trims_trailing_slash_in_dest() {
+        let base = scratch_dir("slash");
+        fs::create_dir_all(&base).unwrap();
+        fs::write(base.join("a.txt"), b"a").unwrap();
+
+        let mut dirs = Vec::new();
+        let mut files = Vec::new();
+        collect_dir_tree(&base, &base, "/dest/", &mut dirs, &mut files).unwrap();
+
+        let remote: Vec<&str> = files.iter().map(|(_, r)| r.as_str()).collect();
+        assert_eq!(remote, vec!["/dest/a.txt"]); // not "/dest//a.txt"
+
+        fs::remove_dir_all(&base).unwrap();
     }
 }

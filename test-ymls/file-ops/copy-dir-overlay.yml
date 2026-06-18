@@ -1,0 +1,27 @@
+- name: Copy directory overlay
+  hosts: test
+  tasks:
+    - name: Seed dest with pre-existing files
+      shell: |
+        rm -rf /tmp/deploy-helper-test-copy-dir-overlay
+        mkdir -p /tmp/deploy-helper-test-copy-dir-overlay/nested
+        echo OLD_ALPHA > /tmp/deploy-helper-test-copy-dir-overlay/alpha.txt
+        echo KEEP_ME > /tmp/deploy-helper-test-copy-dir-overlay/unrelated.txt
+        echo KEEP_DEEP > /tmp/deploy-helper-test-copy-dir-overlay/nested/unrelated-deep.txt
+
+    - name: Overlay copy directory contents
+      copy:
+        src: copy-dir-src
+        dest: /tmp/deploy-helper-test-copy-dir-overlay
+
+    - name: Show overwritten file
+      shell: cat /tmp/deploy-helper-test-copy-dir-overlay/alpha.txt
+
+    - name: Show newly added file
+      shell: cat /tmp/deploy-helper-test-copy-dir-overlay/beta.txt
+
+    - name: Show preserved unrelated file
+      shell: cat /tmp/deploy-helper-test-copy-dir-overlay/unrelated.txt
+
+    - name: Show preserved unrelated nested file
+      shell: cat /tmp/deploy-helper-test-copy-dir-overlay/nested/unrelated-deep.txt

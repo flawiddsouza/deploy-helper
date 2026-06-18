@@ -673,6 +673,97 @@ mod file_ops {
     }
 
     #[test]
+    fn copy_dir_recursive() {
+        setup();
+        run_tests_for_both_inventories("test-ymls/file-ops/copy-dir-basic.yml", false, &[]);
+    }
+
+    // Overlay semantics: a directory copy overwrites matching files, adds new ones,
+    // and leaves unrelated files (top-level and nested) untouched. Runs on localhost
+    // only, so no Docker/SSH needed.
+    #[test]
+    fn copy_dir_overlay_preserves_existing_files() {
+        run_test_check(
+            "test-ymls/file-ops/copy-dir-overlay.yml",
+            false,
+            &[],
+            "tests/servers/local.yml",
+            |output| {
+                assert!(
+                    output.contains("KEEP_ME"),
+                    "unrelated top-level file should be preserved by the overlay copy:\n{}",
+                    output
+                );
+                assert!(
+                    output.contains("KEEP_DEEP"),
+                    "unrelated nested file should be preserved by the overlay copy:\n{}",
+                    output
+                );
+                // OLD_ALPHA appears once in the seed echo; if the copy failed to
+                // overwrite alpha.txt, reading it back would print OLD_ALPHA a 2nd time.
+                assert!(
+                    output.matches("OLD_ALPHA").count() == 1,
+                    "alpha.txt should have been overwritten by the overlay copy:\n{}",
+                    output
+                );
+            },
+        );
+    }
+
+    // A directory copy under `become: true` (sudo, nopasswd). Covers the non-doas
+    // become branch of the dir-skeleton mkdir: the nested dir must be created as root,
+    // which `stat` confirms. Runs against the remote container.
+    #[test]
+    fn copy_dir_with_become() {
+        setup();
+        run_test_check(
+            "test-ymls/file-ops/copy-dir-become.yml",
+            false,
+            &["become_password="],
+            "tests/servers/become-nopass.yml",
+            |output| {
+                assert!(
+                    output.contains("root"),
+                    "files and dirs copied via become should be owned by root:\n{}",
+                    output
+                );
+                assert!(
+                    output.contains("gamma"),
+                    "nested file copied via become should be readable:\n{}",
+                    output
+                );
+            },
+        );
+    }
+
+    // A directory copy under `become_method: doas` with a password. The mkdir step
+    // for the dir skeleton must go through the doas PTY just like the file writes, so
+    // the created dirs are root-owned. `stat` on the nested dir proves it was made as
+    // root (not the login user), which would fail if the mkdir skipped doas.
+    #[test]
+    fn copy_dir_with_become_doas() {
+        setup();
+        run_test_check(
+            "test-ymls/file-ops/copy-dir-become-doas.yml",
+            false,
+            &["become_password=password"],
+            "tests/servers/become-doas-withpass.yml",
+            |output| {
+                assert!(
+                    output.contains("root"),
+                    "files and dirs copied via doas should be owned by root:\n{}",
+                    output
+                );
+                assert!(
+                    output.contains("gamma"),
+                    "nested file copied via doas should be readable:\n{}",
+                    output
+                );
+            },
+        );
+    }
+
+    #[test]
     fn copy_both_src_and_content_error() {
         setup();
         run_tests_for_both_inventories(

@@ -19,7 +19,11 @@ pub fn process(
     become_password: Option<&str>,
     register: Option<&String>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let bytes: Vec<u8> = match (&spec.src, &spec.content) {
+    let dest = utils::replace_placeholders(&spec.dest, vars_map);
+
+    // A directory src copies itself (recursively) here and yields None; file/content
+    // srcs yield the bytes to write through the shared single-file path below.
+    let bytes: Option<Vec<u8>> = match (&spec.src, &spec.content) {
         (Some(_), Some(_)) => {
             return Err(format!(
                 "Task '{}': copy requires exactly one of src or content (both were set)",
@@ -34,35 +38,57 @@ pub fn process(
             )
             .into());
         }
-        (None, Some(content)) => utils::replace_placeholders(content, vars_map).into_bytes(),
+        (None, Some(content)) => Some(utils::replace_placeholders(content, vars_map).into_bytes()),
         (Some(src), None) => {
             let rendered_src = utils::replace_placeholders(src, vars_map);
             let resolved_src = utils::resolve_src_path(deploy_file_dir, &rendered_src);
-            std::fs::read(&resolved_src).map_err(|_| {
-                format!(
-                    "Copy source not found: {}",
-                    resolved_src.to_string_lossy().replace('\\', "/")
-                )
-            })?
+            if resolved_src.is_dir() {
+                // Directory src: recursive overlay copy of its contents into dest.
+                println!(
+                    "{}",
+                    format!(
+                        "> [copy dir] {} -> {}",
+                        resolved_src.to_string_lossy().replace('\\', "/"),
+                        dest
+                    )
+                    .magenta()
+                );
+                utils::write_dir_to_target(
+                    &resolved_src,
+                    &dest,
+                    is_localhost,
+                    session,
+                    become_enabled,
+                    become_method,
+                    become_password,
+                )?;
+                None
+            } else {
+                Some(std::fs::read(&resolved_src).map_err(|_| {
+                    format!(
+                        "Copy source not found: {}",
+                        resolved_src.to_string_lossy().replace('\\', "/")
+                    )
+                })?)
+            }
         }
     };
 
-    let dest = utils::replace_placeholders(&spec.dest, vars_map);
-
-    println!(
-        "{}",
-        format!("> [copy] {} ({} bytes)", dest, bytes.len()).magenta()
-    );
-
-    utils::write_to_target(
-        &bytes,
-        &dest,
-        is_localhost,
-        session,
-        become_enabled,
-        become_method,
-        become_password,
-    )?;
+    if let Some(bytes) = bytes {
+        println!(
+            "{}",
+            format!("> [copy] {} ({} bytes)", dest, bytes.len()).magenta()
+        );
+        utils::write_to_target(
+            &bytes,
+            &dest,
+            is_localhost,
+            session,
+            become_enabled,
+            become_method,
+            become_password,
+        )?;
+    }
 
     if let Some(reg) = register {
         let value = serde_json::to_value(Register {

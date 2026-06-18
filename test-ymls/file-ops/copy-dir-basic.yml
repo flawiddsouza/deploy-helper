@@ -1,0 +1,13 @@
+- name: Copy directory
+  hosts: test
+  tasks:
+    - name: Copy directory contents
+      copy:
+        src: copy-dir-src
+        dest: /tmp/deploy-helper-test-copy-dir
+
+    - name: Read top-level file
+      shell: cat /tmp/deploy-helper-test-copy-dir/alpha.txt
+
+    - name: Read nested file
+      shell: cat /tmp/deploy-helper-test-copy-dir/nested/gamma.txt

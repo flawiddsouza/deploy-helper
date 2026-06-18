@@ -1,0 +1,16 @@
+- name: Copy directory with become
+  hosts: test
+  tasks:
+    - name: Copy directory as root
+      become: true
+      copy:
+        src: copy-dir-src
+        dest: /tmp/deploy-helper-test-copy-dir-become
+
+    - name: Verify the nested dir was created as root
+      become: true
+      shell: stat -c '%U' /tmp/deploy-helper-test-copy-dir-become/nested
+
+    - name: Read a nested file back
+      become: true
+      shell: cat /tmp/deploy-helper-test-copy-dir-become/nested/gamma.txt

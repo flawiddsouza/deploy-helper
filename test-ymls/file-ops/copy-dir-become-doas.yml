@@ -1,0 +1,24 @@
+- name: Copy directory with become via doas
+  hosts: test
+  tasks:
+    - name: Copy directory as root via doas
+      become: true
+      become_method: doas
+      copy:
+        src: copy-dir-src
+        dest: /tmp/deploy-helper-test-copy-dir-doas
+
+    - name: Verify a copied file is owned by root
+      become: true
+      become_method: doas
+      shell: stat -c '%U' /tmp/deploy-helper-test-copy-dir-doas/alpha.txt
+
+    - name: Verify the nested dir was created as root via doas
+      become: true
+      become_method: doas
+      shell: stat -c '%U' /tmp/deploy-helper-test-copy-dir-doas/nested
+
+    - name: Read a nested file back
+      become: true
+      become_method: doas
+      shell: cat /tmp/deploy-helper-test-copy-dir-doas/nested/gamma.txt
