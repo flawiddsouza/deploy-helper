@@ -1,0 +1,5 @@
+- name: Baseline for the unknown-key inventory test
+  hosts: test
+  tasks:
+    - name: Runs only if the inventory parsed
+      shell: echo INVENTORY_OK

@@ -47,6 +47,7 @@ where
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Task {
     pub name: String,
     pub shell: Option<String>,
@@ -72,6 +73,7 @@ pub struct Task {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct TemplateSpec {
     pub src: String,
     pub dest: String,
@@ -80,6 +82,7 @@ pub struct TemplateSpec {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CopySpec {
     pub src: Option<String>,
     pub content: Option<String>,
@@ -89,6 +92,7 @@ pub struct CopySpec {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct FileSpec {
     pub path: String,
     pub state: String,
@@ -170,6 +174,29 @@ mod tests {
         let yaml = "src: a\ndest: b\nmode: \"644\"\n";
         let spec: TemplateSpec = serde_yaml::from_str(yaml).unwrap();
         assert_eq!(spec.mode, Some("644".to_string()));
+    }
+
+    #[test]
+    fn task_rejects_unknown_key() {
+        let yaml = "name: Example\nshell: echo hi\nwibblesplat: yes\n";
+        let err = serde_yaml::from_str::<Task>(yaml).unwrap_err();
+        assert!(
+            err.to_string().contains("unknown field `wibblesplat`"),
+            "error should name the unknown key: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn copy_spec_rejects_dest_typo_and_lists_expected_keys() {
+        let yaml = "src: a\ndst: b\n";
+        let err = serde_yaml::from_str::<CopySpec>(yaml).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("unknown field `dst`") && msg.contains("dest"),
+            "error should name the typo and the expected keys: {}",
+            msg
+        );
     }
 
     #[test]

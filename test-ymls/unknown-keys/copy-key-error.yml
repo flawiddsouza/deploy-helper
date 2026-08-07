@@ -1,0 +1,7 @@
+- name: Copy dest typo
+  hosts: test
+  tasks:
+    - name: dst instead of dest
+      copy:
+        content: hello
+        dst: /tmp/deploy-helper-test-unknown-copy

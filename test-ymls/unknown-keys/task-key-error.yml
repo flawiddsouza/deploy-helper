@@ -1,0 +1,6 @@
+- name: Unknown task key
+  hosts: test
+  tasks:
+    - name: Task with a typo key
+      shell: echo hi
+      wibblesplat: yes

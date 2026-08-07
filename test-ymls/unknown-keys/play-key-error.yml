@@ -1,0 +1,6 @@
+- name: Unknown play key
+  hosts: test
+  flibbertigibbet: yes
+  tasks:
+    - name: Never runs
+      shell: echo hi

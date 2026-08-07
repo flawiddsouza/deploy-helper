@@ -1296,6 +1296,85 @@ mod execution {
     }
 }
 
+// Unknown keys anywhere in a deploy file or inventory are parse errors, so a
+// typo like dst: for dest: can't silently do nothing. Localhost only.
+mod unknown_keys {
+    use super::*;
+
+    #[test]
+    fn unknown_task_key_is_an_error() {
+        run_test_check(
+            "test-ymls/unknown-keys/task-key-error.yml",
+            true,
+            &[],
+            "tests/servers/local.yml",
+            |output| {
+                assert!(
+                    output.contains("unknown field `wibblesplat`"),
+                    "error should name the unknown task key:\n{}",
+                    output
+                );
+            },
+        );
+    }
+
+    #[test]
+    fn unknown_play_key_is_an_error() {
+        run_test_check(
+            "test-ymls/unknown-keys/play-key-error.yml",
+            true,
+            &[],
+            "tests/servers/local.yml",
+            |output| {
+                assert!(
+                    output.contains("unknown field `flibbertigibbet`"),
+                    "error should name the unknown play key:\n{}",
+                    output
+                );
+            },
+        );
+    }
+
+    #[test]
+    fn copy_dest_typo_is_an_error_naming_expected_keys() {
+        run_test_check(
+            "test-ymls/unknown-keys/copy-key-error.yml",
+            true,
+            &[],
+            "tests/servers/local.yml",
+            |output| {
+                assert!(
+                    output.contains("unknown field `dst`") && output.contains("dest"),
+                    "error should name the typo and the expected keys:\n{}",
+                    output
+                );
+            },
+        );
+    }
+
+    #[test]
+    fn unknown_inventory_key_is_an_error() {
+        run_test_check(
+            "test-ymls/unknown-keys/ok.yml",
+            true,
+            &[],
+            "tests/servers/unknown-key.yml",
+            |output| {
+                assert!(
+                    output.contains("unknown field `ssh_keypath`"),
+                    "error should name the unknown inventory key:\n{}",
+                    output
+                );
+                assert!(
+                    !output.contains("INVENTORY_OK"),
+                    "no task should run when the inventory fails to parse:\n{}",
+                    output
+                );
+            },
+        );
+    }
+}
+
 // creates/removes idempotency guards run against localhost, so no Docker/SSH needed.
 mod idempotency {
     use super::*;

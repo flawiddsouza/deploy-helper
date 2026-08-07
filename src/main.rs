@@ -13,11 +13,13 @@ use std::path::Path;
 use std::process::exit;
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct ServerConfig {
     hosts: IndexMap<String, TargetHost>,
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct TargetHost {
     host: String,
     port: Option<u16>,
@@ -48,6 +50,7 @@ impl TargetHost {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct Deployment {
     pub(crate) name: String,
     pub(crate) hosts: String,
