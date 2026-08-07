@@ -1,0 +1,13 @@
+- name: Copy with mode as root
+  hosts: test
+  tasks:
+    - name: Write root-owned secret file with mode
+      become: true
+      copy:
+        content: |
+          SECRET=copy-mode-become-value
+        dest: /tmp/deploy-helper-test-copy-mode-become.env
+        mode: "0600"
+
+    - name: Verify permissions and owner
+      shell: stat -c 'PERMS=%a OWNER=%U' /tmp/deploy-helper-test-copy-mode-become.env

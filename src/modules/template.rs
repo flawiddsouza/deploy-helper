@@ -9,6 +9,7 @@ use crate::common::{Register, TemplateSpec};
 use crate::utils;
 
 pub fn process(
+    task_name: &str,
     spec: &TemplateSpec,
     deploy_file_dir: &Path,
     is_localhost: bool,
@@ -37,12 +38,24 @@ pub fn process(
         )
     })?;
 
+    let mode = spec
+        .mode
+        .as_deref()
+        .map(|m| utils::replace_placeholders(m, vars_map));
+    if let Some(m) = &mode {
+        utils::validate_mode(m).map_err(|e| format!("Task '{}': {}", task_name, e))?;
+    }
+
     let rendered = utils::replace_placeholders(text, vars_map);
     let bytes = rendered.into_bytes();
 
+    let mode_note = mode
+        .as_deref()
+        .map(|m| format!(", mode {}", m))
+        .unwrap_or_default();
     println!(
         "{}",
-        format!("> [template] {} ({} bytes)", dest, bytes.len()).magenta()
+        format!("> [template] {} ({} bytes{})", dest, bytes.len(), mode_note).magenta()
     );
 
     utils::write_to_target(
@@ -53,6 +66,7 @@ pub fn process(
         become_enabled,
         become_method,
         become_password,
+        mode.as_deref(),
     )?;
 
     if let Some(reg) = register {

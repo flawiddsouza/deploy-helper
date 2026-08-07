@@ -63,7 +63,7 @@ Deployment fields:
 
 ## Task Structure
 
-Each task has a `name:` and one action key (`shell:`, `command:`, `template:`, `copy:`, `debug:`, or `include_tasks:`). `debug:` is the one action that may be paired with another action on the same task; it runs first. Modifiers (`register:`, `when:`, `loop:`, `vars:`, `chdir:`, `login_shell:`, `become:`, `become_method:`, `tags:`) may be added to any task.
+Each task has a `name:` and one action key (`shell:`, `command:`, `template:`, `copy:`, `file:`, `debug:`, or `include_tasks:`). `debug:` is the one action that may be paired with another action on the same task; it runs first. Modifiers (`register:`, `when:`, `loop:`, `vars:`, `chdir:`, `login_shell:`, `become:`, `become_method:`, `tags:`) may be added to any task.
 
 ### `shell:`
 
@@ -104,6 +104,8 @@ Renders a Jinja-style template file and writes it to a destination.
 
 `src:` is resolved relative to the deploy file's directory. The file's contents are rendered through MiniJinja using the current vars map. The `.j2` extension is convention only.
 
+`mode:` sets the destination file's permissions. See [`mode:`](#mode) below.
+
 ### `copy:`
 
 Writes a file from a static source or inline content, or copies a directory's contents recursively.
@@ -132,6 +134,38 @@ When `src:` is a directory, its contents are copied recursively into `dest:` (li
 
 Symlinks inside `src:` are followed, not preserved: a link is copied as the file or directory it points to. A symlink that forms a cycle is not detected and will make the copy fail.
 
+#### `mode:`
+
+`copy:` and `template:` accept a `mode:` that sets the destination file's permissions:
+
+```yaml
+- name: Write credentials
+  copy:
+    content: |
+      B2_KEY={{ b2_key }}
+    dest: /etc/app/backup.env
+    mode: "0600"
+```
+
+The value must be a string of octal digits (quote it: without a leading zero, YAML reads `600` as a number and the run fails with a hint). The file is staged next to `dest:` under a restrictive umask, chmod-ed, then atomically moved into place, so its content is never readable beyond the requested mode, not even between write and chmod. Not supported when `src:` is a directory.
+
+### `file:`
+
+Creates a directory (with parents, like `mkdir -p`) and applies permissions and ownership to it. Replaces `install -d -m ... -o ... -g ...` shell calls.
+
+```yaml
+- name: Create data directory
+  become: true
+  file:
+    path: /srv/app/uploads
+    state: directory
+    mode: "0750"
+    owner: "1000"
+    group: "1000"
+```
+
+`state: directory` is required (no other states are supported yet). `mode:`, `owner:`, and `group:` are optional and apply to the final path component only; parents created along the way get default permissions. The task succeeds without changes if the directory already exists.
+
 ### `debug:`
 
 Prints values from the current vars map. Useful for inspecting state mid-deployment.
@@ -157,8 +191,8 @@ The path is resolved relative to the deploy file's directory. Included tasks see
 
 These can be set on any task:
 
-- `register: <name>` - capture the action's result (`stdout`, `stderr`, `rc`) into a var. For `template:` and `copy:` the captured value is empty (`{stdout: "", stderr: "", rc: 0}`) since there is no command output.
-- `no_log: true` - suppress this task's command echo and output (and `debug:` output) so secrets aren't printed. `copy:`/`template:` are unaffected since they never print their content. The `Executing task:` line still shows.
+- `register: <name>` - capture the action's result (`stdout`, `stderr`, `rc`) into a var. For `template:`, `copy:`, and `file:` the captured value is empty (`{stdout: "", stderr: "", rc: 0}`) since there is no command output.
+- `no_log: true` - suppress this task's command echo and output (and `debug:` output) so secrets aren't printed. `copy:`/`template:`/`file:` are unaffected since they never print their content. The `Executing task:` line still shows.
 - `vars:` - set vars before the action runs. Available for substitution in the same task.
 - `chdir: <path>` - working directory for `shell:` and `command:`. Falls back to the deployment-level `chdir:`.
 - `when: <expr>` - skip the task unless the expression evaluates true.

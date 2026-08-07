@@ -1,0 +1,8 @@
+- name: Copy with invalid mode
+  hosts: test
+  tasks:
+    - name: Mode is not octal
+      copy:
+        content: nope
+        dest: /tmp/deploy-helper-test-copy-mode-invalid
+        mode: "rw-r--r--"

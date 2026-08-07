@@ -1,0 +1,14 @@
+- name: Copy with mode
+  hosts: test
+  tasks:
+    - name: Write secret file with mode
+      copy:
+        content: |
+          SECRET=copy-mode-value
+        dest: /tmp/deploy-helper-test-copy-mode.env
+        mode: "0600"
+
+    - name: Verify permissions and no leftover temp file
+      shell: |
+        stat -c 'PERMS=%a' /tmp/deploy-helper-test-copy-mode.env
+        test ! -e /tmp/deploy-helper-test-copy-mode.env.deploy-helper-tmp && echo TMP_GONE

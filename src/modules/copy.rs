@@ -21,6 +21,14 @@ pub fn process(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let dest = utils::replace_placeholders(&spec.dest, vars_map);
 
+    let mode = spec
+        .mode
+        .as_deref()
+        .map(|m| utils::replace_placeholders(m, vars_map));
+    if let Some(m) = &mode {
+        utils::validate_mode(m).map_err(|e| format!("Task '{}': {}", task_name, e))?;
+    }
+
     // A directory src copies itself (recursively) here and yields None; file/content
     // srcs yield the bytes to write through the shared single-file path below.
     let bytes: Option<Vec<u8>> = match (&spec.src, &spec.content) {
@@ -43,6 +51,13 @@ pub fn process(
             let rendered_src = utils::replace_placeholders(src, vars_map);
             let resolved_src = utils::resolve_src_path(deploy_file_dir, &rendered_src);
             if resolved_src.is_dir() {
+                if mode.is_some() {
+                    return Err(format!(
+                        "Task '{}': mode is not supported when src is a directory",
+                        task_name
+                    )
+                    .into());
+                }
                 // Directory src: recursive overlay copy of its contents into dest.
                 println!(
                     "{}",
@@ -75,9 +90,13 @@ pub fn process(
     };
 
     if let Some(bytes) = bytes {
+        let mode_note = mode
+            .as_deref()
+            .map(|m| format!(", mode {}", m))
+            .unwrap_or_default();
         println!(
             "{}",
-            format!("> [copy] {} ({} bytes)", dest, bytes.len()).magenta()
+            format!("> [copy] {} ({} bytes{})", dest, bytes.len(), mode_note).magenta()
         );
         utils::write_to_target(
             &bytes,
@@ -87,6 +106,7 @@ pub fn process(
             become_enabled,
             become_method,
             become_password,
+            mode.as_deref(),
         )?;
     }
 

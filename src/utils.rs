@@ -11,8 +11,64 @@ use std::net::TcpStream;
 use std::path::{Path, PathBuf};
 use std::process::{exit, Command, Stdio};
 
-fn shell_escape(s: &str) -> String {
+pub(crate) fn shell_escape(s: &str) -> String {
     format!("'{}'", s.replace('\'', "'\\''"))
+}
+
+// Permission modes are restricted to plain octal so they can be spliced into
+// shell commands without quoting concerns.
+pub fn validate_mode(mode: &str) -> Result<(), String> {
+    let ok = !mode.is_empty() && mode.len() <= 4 && mode.chars().all(|c| ('0'..='7').contains(&c));
+    if ok {
+        Ok(())
+    } else {
+        Err(format!(
+            "invalid mode '{}': expected 1 to 4 octal digits, like \"0600\" or \"755\"",
+            mode
+        ))
+    }
+}
+
+// The two staged-write command builders below place a file at `dest` with
+// `mode` applied before it becomes visible there: the temp copy sits next to
+// dest, is created under umask 077 (so it never exceeds 0600), gets chmod'ed
+// to the requested mode, and an atomic mv replaces dest. The file is never
+// readable beyond `mode` at any point.
+fn mode_dest_tmp(dest: &str) -> String {
+    format!("{}.deploy-helper-tmp", dest)
+}
+
+// stdin is piped into the temp file (`cat > tmp`).
+fn write_pipe_command(dest: &str, mode: Option<&str>) -> String {
+    match mode {
+        None => format!("cat > {}", shell_escape(dest)),
+        Some(m) => {
+            let dtmp = mode_dest_tmp(dest);
+            format!(
+                "umask 077 && cat > {dtmp} && chmod {m} {dtmp} && mv -f {dtmp} {dst}",
+                dtmp = shell_escape(&dtmp),
+                m = m,
+                dst = shell_escape(dest)
+            )
+        }
+    }
+}
+
+// An already-staged file at `src_tmp` is copied into place.
+fn place_file_command(src_tmp: &str, dest: &str, mode: Option<&str>) -> String {
+    match mode {
+        None => format!("cp {} {}", shell_escape(src_tmp), shell_escape(dest)),
+        Some(m) => {
+            let dtmp = mode_dest_tmp(dest);
+            format!(
+                "umask 077 && cp {src} {dtmp} && chmod {m} {dtmp} && mv -f {dtmp} {dst}",
+                src = shell_escape(src_tmp),
+                dtmp = shell_escape(&dtmp),
+                m = m,
+                dst = shell_escape(dest)
+            )
+        }
+    }
 }
 
 pub fn wrap_become_command(command: &str, method: &str, password: Option<&str>) -> String {
@@ -672,6 +728,57 @@ pub fn execute_local_doas_with_pty(
     Ok((combined.trim_end_matches(['\n', '\r']).to_string(), String::new(), exit_code))
 }
 
+// Runs `command` on the target through the same become/doas plumbing the file
+// writes use, without displaying output. Returns (stdout, stderr, exit_code);
+// the doas-PTY path merges stderr into stdout.
+pub fn run_shell_on_target(
+    command: &str,
+    is_localhost: bool,
+    session: Option<&Session>,
+    become_enabled: bool,
+    become_method: &str,
+    become_password: Option<&str>,
+) -> Result<(String, String, i32), Box<dyn std::error::Error>> {
+    // doas reads its password from /dev/tty, so a doas-with-password command
+    // must go through a PTY, not the piped wrap_become path.
+    let doas_pw = if become_enabled && become_method == "doas" {
+        become_password.filter(|s| !s.is_empty())
+    } else {
+        None
+    };
+
+    if let Some(password) = doas_pw {
+        let doas_cmd = wrap_become_command(command, "doas", None);
+        if is_localhost {
+            #[cfg(unix)]
+            {
+                return execute_local_doas_with_pty(&doas_cmd, password, false, None, false);
+            }
+            #[cfg(not(unix))]
+            {
+                let _ = password;
+                return Err(
+                    "doas with become_password is not supported on non-Unix platforms".into()
+                );
+            }
+        }
+        let session = session.ok_or("run_shell_on_target: remote target requires session")?;
+        return execute_ssh_doas_with_pty(session, &doas_cmd, password, false, None, false);
+    }
+
+    let cmd = if become_enabled {
+        wrap_become_command(command, become_method, become_password)
+    } else {
+        command.to_string()
+    };
+    if is_localhost {
+        execute_local_command(&cmd, true, false, None, false)
+    } else {
+        let session = session.ok_or("run_shell_on_target: remote target requires session")?;
+        execute_ssh_command(session, &cmd, true, false, None, false)
+    }
+}
+
 // Writes `bytes` to a privileged `dest` on localhost via doas+password. doas
 // needs a tty, so the bytes are staged to a user-owned temp file first and then
 // copied into place under a PTY-authenticated doas (mirrors the remote path).
@@ -680,6 +787,7 @@ fn write_local_doas(
     bytes: &[u8],
     dest: &str,
     password: &str,
+    mode: Option<&str>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -688,12 +796,14 @@ fn write_local_doas(
     let tmp_path = format!("/tmp/deploy-helper-{}-{}", nanos, std::process::id());
     std::fs::write(&tmp_path, bytes)
         .map_err(|e| format!("Failed to write {}: {}", tmp_path, e))?;
+    if mode.is_some() {
+        // The staged copy must never be readable beyond the requested mode.
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&tmp_path, std::fs::Permissions::from_mode(0o600))
+            .map_err(|e| format!("Failed to chmod {}: {}", tmp_path, e))?;
+    }
 
-    let inner = format!(
-        "cp {tmp} {dst}",
-        tmp = shell_escape(&tmp_path),
-        dst = shell_escape(dest)
-    );
+    let inner = place_file_command(&tmp_path, dest, mode);
     let doas_cmd = wrap_become_command(&inner, "doas", None);
     let result = execute_local_doas_with_pty(&doas_cmd, password, false, None, false);
     let _ = std::fs::remove_file(&tmp_path);
@@ -710,6 +820,7 @@ fn write_local_doas(
     _bytes: &[u8],
     _dest: &str,
     _password: &str,
+    _mode: Option<&str>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     Err("doas with become_password is not supported on non-Unix platforms".into())
 }
@@ -722,6 +833,7 @@ pub fn write_to_target(
     become_enabled: bool,
     become_method: &str,
     become_password: Option<&str>,
+    mode: Option<&str>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     // doas can't take a piped password (needs a tty), so it routes through a
     // PTY helper instead of the standard wrap_become_command path below.
@@ -734,9 +846,9 @@ pub fn write_to_target(
     if is_localhost {
         if become_enabled {
             if let Some(password) = doas_pw {
-                return write_local_doas(bytes, dest, password);
+                return write_local_doas(bytes, dest, password, mode);
             }
-            let inner = format!("cat > {}", shell_escape(dest));
+            let inner = write_pipe_command(dest, mode);
             let wrapped = wrap_become_command(&inner, become_method, become_password);
             let mut cmd = Command::new("sh");
             cmd.arg("-c").arg(&wrapped);
@@ -775,7 +887,7 @@ pub fn write_to_target(
         // consistent across all local operations.
         let mut child = Command::new("sh")
             .arg("-c")
-            .arg(format!("cat > {}", shell_escape(dest)))
+            .arg(write_pipe_command(dest, mode))
             .stdin(Stdio::piped())
             .stdout(Stdio::null())
             .stderr(Stdio::piped())
@@ -810,18 +922,28 @@ pub fn write_to_target(
                 .sftp()
                 .map_err(|e| format!("Failed to open SFTP session: {}", e))?;
             {
-                let mut remote = sftp
-                    .create(Path::new(&tmp_path))
-                    .map_err(|e| format!("Failed to write {}: {}", tmp_path, e))?;
+                // With a mode, the staged copy in /tmp is created 0600 so the
+                // content is never world-readable, not even before placement.
+                let mut remote = if mode.is_some() {
+                    sftp.open_mode(
+                        Path::new(&tmp_path),
+                        ssh2::OpenFlags::WRITE | ssh2::OpenFlags::CREATE | ssh2::OpenFlags::TRUNCATE,
+                        0o600,
+                        ssh2::OpenType::File,
+                    )
+                } else {
+                    sftp.create(Path::new(&tmp_path))
+                }
+                .map_err(|e| format!("Failed to write {}: {}", tmp_path, e))?;
                 remote
                     .write_all(bytes)
                     .map_err(|e| format!("Failed to write {}: {}", tmp_path, e))?;
             }
 
             let inner = format!(
-                "trap 'rm -f {tmp}' EXIT; cp {tmp} {dst}",
+                "trap 'rm -f {tmp}' EXIT; {place}",
                 tmp = shell_escape(&tmp_path),
-                dst = shell_escape(dest)
+                place = place_file_command(&tmp_path, dest, mode)
             );
 
             if let Some(password) = doas_pw {
@@ -850,6 +972,39 @@ pub fn write_to_target(
         let sftp = session
             .sftp()
             .map_err(|e| format!("Failed to open SFTP session: {}", e))?;
+        if let Some(m) = mode {
+            // Stage next to dest with 0600 via SFTP, then chmod to the exact
+            // mode (SFTP create modes are subject to the server's umask) and
+            // atomically mv into place.
+            let dtmp = mode_dest_tmp(dest);
+            {
+                let mut remote = sftp
+                    .open_mode(
+                        Path::new(&dtmp),
+                        ssh2::OpenFlags::WRITE | ssh2::OpenFlags::CREATE | ssh2::OpenFlags::TRUNCATE,
+                        0o600,
+                        ssh2::OpenType::File,
+                    )
+                    .map_err(|e| format!("Failed to write {}: {}", dtmp, e))?;
+                remote
+                    .write_all(bytes)
+                    .map_err(|e| format!("Failed to write {}: {}", dtmp, e))?;
+            }
+            let place = format!(
+                "chmod {m} {dtmp} && mv -f {dtmp} {dst}",
+                m = m,
+                dtmp = shell_escape(&dtmp),
+                dst = shell_escape(dest)
+            );
+            let (_stdout, stderr, code) =
+                execute_ssh_command(session, &place, true, false, None, false)?;
+            if code != 0 {
+                return Err(
+                    format!("Failed to write {}: exit {}: {}", dest, code, stderr.trim()).into(),
+                );
+            }
+            return Ok(());
+        }
         let mut remote = sftp
             .create(Path::new(dest))
             .map_err(|e| format!("Failed to write {}: {}", dest, e))?;
@@ -912,44 +1067,14 @@ pub fn write_dir_to_target(
     let escaped: Vec<String> = dirs.iter().map(|d| shell_escape(d)).collect();
     let mkdir = format!("mkdir -p {}", escaped.join(" "));
 
-    // doas reads its password from /dev/tty, so a doas-with-password mkdir must go
-    // through a PTY (same as the per-file writes), not the piped wrap_become path.
-    let doas_pw = if become_enabled && become_method == "doas" {
-        become_password.filter(|s| !s.is_empty())
-    } else {
-        None
-    };
-
-    let (out, stderr, code) = if let Some(password) = doas_pw {
-        let doas_cmd = wrap_become_command(&mkdir, "doas", None);
-        if is_localhost {
-            #[cfg(unix)]
-            {
-                execute_local_doas_with_pty(&doas_cmd, password, false, None, false)?
-            }
-            #[cfg(not(unix))]
-            {
-                return Err(
-                    "doas with become_password is not supported on non-Unix platforms".into(),
-                );
-            }
-        } else {
-            let session = session.ok_or("write_dir_to_target: remote target requires session")?;
-            execute_ssh_doas_with_pty(session, &doas_cmd, password, false, None, false)?
-        }
-    } else {
-        let cmd = if become_enabled {
-            wrap_become_command(&mkdir, become_method, become_password)
-        } else {
-            mkdir
-        };
-        if is_localhost {
-            execute_local_command(&cmd, true, false, None, false)?
-        } else {
-            let session = session.ok_or("write_dir_to_target: remote target requires session")?;
-            execute_ssh_command(session, &cmd, true, false, None, false)?
-        }
-    };
+    let (out, stderr, code) = run_shell_on_target(
+        &mkdir,
+        is_localhost,
+        session,
+        become_enabled,
+        become_method,
+        become_password,
+    )?;
 
     if code != 0 {
         // The doas-PTY path merges stderr into stdout, so fall back to it when stderr is empty.
@@ -973,6 +1098,7 @@ pub fn write_dir_to_target(
             become_enabled,
             become_method,
             become_password,
+            None,
         )?;
     }
 
@@ -1007,6 +1133,53 @@ mod tests {
     #[test]
     fn test_shell_escape_with_special_chars() {
         assert_eq!(shell_escape("a && b | c"), "'a && b | c'");
+    }
+
+    // validate_mode
+
+    #[test]
+    fn test_validate_mode_accepts_octal() {
+        for m in ["0600", "600", "755", "0755", "7", "1777"] {
+            assert!(validate_mode(m).is_ok(), "should accept {}", m);
+        }
+    }
+
+    #[test]
+    fn test_validate_mode_rejects_non_octal() {
+        for m in ["", "0800", "rw-r--r--", "u+x", "07777", "6 00"] {
+            assert!(validate_mode(m).is_err(), "should reject {}", m);
+        }
+    }
+
+    // staged-write command builders
+
+    #[test]
+    fn test_write_pipe_command_without_mode() {
+        assert_eq!(write_pipe_command("/etc/app.env", None), "cat > '/etc/app.env'");
+    }
+
+    #[test]
+    fn test_write_pipe_command_with_mode_stages_and_moves() {
+        assert_eq!(
+            write_pipe_command("/etc/app.env", Some("0600")),
+            "umask 077 && cat > '/etc/app.env.deploy-helper-tmp' && chmod 0600 '/etc/app.env.deploy-helper-tmp' && mv -f '/etc/app.env.deploy-helper-tmp' '/etc/app.env'"
+        );
+    }
+
+    #[test]
+    fn test_place_file_command_without_mode() {
+        assert_eq!(
+            place_file_command("/tmp/stage", "/etc/app.env", None),
+            "cp '/tmp/stage' '/etc/app.env'"
+        );
+    }
+
+    #[test]
+    fn test_place_file_command_with_mode_stages_and_moves() {
+        assert_eq!(
+            place_file_command("/tmp/stage", "/etc/app.env", Some("640")),
+            "umask 077 && cp '/tmp/stage' '/etc/app.env.deploy-helper-tmp' && chmod 640 '/etc/app.env.deploy-helper-tmp' && mv -f '/etc/app.env.deploy-helper-tmp' '/etc/app.env'"
+        );
     }
 
     // heredoc_delimiter

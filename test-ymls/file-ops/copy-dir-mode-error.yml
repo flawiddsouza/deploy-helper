@@ -1,0 +1,8 @@
+- name: Copy directory with mode
+  hosts: test
+  tasks:
+    - name: Mode with a directory src is rejected
+      copy:
+        src: copy-dir-src
+        dest: /tmp/deploy-helper-test-copy-dir-mode
+        mode: "0700"

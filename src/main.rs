@@ -247,6 +247,7 @@ fn process_tasks(
 
             if let Some(spec) = &task.template {
                 modules::template::process(
+                    &task_name,
                     spec,
                     ctx.deploy_file_dir,
                     ctx.is_localhost,
@@ -264,6 +265,20 @@ fn process_tasks(
                     &task_name,
                     spec,
                     ctx.deploy_file_dir,
+                    ctx.is_localhost,
+                    ctx.session,
+                    ctx.vars_map,
+                    task_become,
+                    &task_become_method,
+                    task_become_password,
+                    task.register.as_ref(),
+                )?;
+            }
+
+            if let Some(spec) = &task.file {
+                modules::file::process(
+                    &task_name,
+                    spec,
                     ctx.is_localhost,
                     ctx.session,
                     ctx.vars_map,

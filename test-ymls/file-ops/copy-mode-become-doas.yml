@@ -1,0 +1,14 @@
+- name: Copy with mode via doas
+  hosts: test
+  tasks:
+    - name: Write root-owned secret file with mode through doas
+      become: true
+      become_method: doas
+      copy:
+        content: |
+          SECRET=copy-mode-doas-value
+        dest: /tmp/deploy-helper-test-copy-mode-doas.env
+        mode: "0600"
+
+    - name: Verify permissions and owner
+      shell: stat -c 'PERMS=%a OWNER=%U' /tmp/deploy-helper-test-copy-mode-doas.env

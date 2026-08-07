@@ -1,0 +1,15 @@
+- name: Template with mode
+  hosts: test
+  vars:
+    tm_value: template-mode-value
+  tasks:
+    - name: Render template with mode
+      template:
+        src: template-mode.src.j2
+        dest: /tmp/deploy-helper-test-template-mode.conf
+        mode: "0640"
+
+    - name: Verify permissions and content
+      shell: |
+        stat -c 'PERMS=%a' /tmp/deploy-helper-test-template-mode.conf
+        cat /tmp/deploy-helper-test-template-mode.conf

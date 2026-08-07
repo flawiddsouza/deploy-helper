@@ -1,0 +1,8 @@
+- name: Copy with unquoted numeric mode
+  hosts: test
+  tasks:
+    - name: Mode is a YAML number
+      copy:
+        content: nope
+        dest: /tmp/deploy-helper-test-copy-mode-unquoted
+        mode: 600

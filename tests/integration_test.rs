@@ -852,6 +852,185 @@ mod file_ops {
             &[],
         );
     }
+
+    // mode: on copy/template lands the file with the exact permissions and no
+    // window where it is readable beyond them. Verified on the container since
+    // Windows-local chmod is a no-op.
+    #[test]
+    fn copy_mode_sets_permissions() {
+        setup();
+        run_test_check(
+            "test-ymls/file-ops/copy-mode.yml",
+            false,
+            &[],
+            "tests/servers/remote-ssh.yml",
+            |output| {
+                assert!(
+                    output.contains("PERMS=600"),
+                    "copied file should have mode 600:\n{}",
+                    output
+                );
+                assert!(
+                    output.contains("TMP_GONE"),
+                    "staging temp file should not be left behind:\n{}",
+                    output
+                );
+            },
+        );
+    }
+
+    #[test]
+    fn template_mode_sets_permissions() {
+        setup();
+        run_test_check(
+            "test-ymls/file-ops/template-mode.yml",
+            false,
+            &[],
+            "tests/servers/remote-ssh.yml",
+            |output| {
+                assert!(
+                    output.contains("PERMS=640"),
+                    "templated file should have mode 640:\n{}",
+                    output
+                );
+                assert!(
+                    output.contains("token=template-mode-value"),
+                    "templated content should be rendered:\n{}",
+                    output
+                );
+            },
+        );
+    }
+
+    // The become path stages via /tmp and places the file as root; mode must
+    // survive that route too.
+    #[test]
+    fn copy_mode_with_become() {
+        setup();
+        run_test_check(
+            "test-ymls/file-ops/copy-mode-become.yml",
+            false,
+            &["become_password="],
+            "tests/servers/become-nopass.yml",
+            |output| {
+                assert!(
+                    output.contains("PERMS=600") && output.contains("OWNER=root"),
+                    "file written via become should be root-owned with mode 600:\n{}",
+                    output
+                );
+            },
+        );
+    }
+
+    // Same through the doas PTY placement path.
+    #[test]
+    fn copy_mode_with_become_doas() {
+        setup();
+        run_test_check(
+            "test-ymls/file-ops/copy-mode-become-doas.yml",
+            false,
+            &["become_password=password"],
+            "tests/servers/become-doas-withpass.yml",
+            |output| {
+                assert!(
+                    output.contains("PERMS=600") && output.contains("OWNER=root"),
+                    "file written via doas should be root-owned with mode 600:\n{}",
+                    output
+                );
+            },
+        );
+    }
+
+    #[test]
+    fn file_directory_creates_with_mode_and_owner() {
+        setup();
+        run_test_check(
+            "test-ymls/file-ops/file-directory.yml",
+            false,
+            &[],
+            "tests/servers/remote-ssh.yml",
+            |output| {
+                assert!(
+                    output.contains("DIR1=700"),
+                    "nested directory should have mode 700:\n{}",
+                    output
+                );
+                assert!(
+                    output.contains("DIR2=750:nopass:nopass"),
+                    "owned directory should have mode 750 and nopass:nopass ownership:\n{}",
+                    output
+                );
+            },
+        );
+    }
+
+    #[test]
+    fn copy_mode_invalid_error() {
+        run_test_check(
+            "test-ymls/file-ops/copy-mode-invalid-error.yml",
+            true,
+            &[],
+            "tests/servers/local.yml",
+            |output| {
+                assert!(
+                    output.contains("invalid mode"),
+                    "non-octal mode should be rejected:\n{}",
+                    output
+                );
+            },
+        );
+    }
+
+    #[test]
+    fn copy_mode_unquoted_number_error() {
+        run_test_check(
+            "test-ymls/file-ops/copy-mode-unquoted-error.yml",
+            true,
+            &[],
+            "tests/servers/local.yml",
+            |output| {
+                assert!(
+                    output.contains("quoted"),
+                    "a numeric mode should fail with a hint to quote it:\n{}",
+                    output
+                );
+            },
+        );
+    }
+
+    #[test]
+    fn copy_dir_with_mode_error() {
+        run_test_check(
+            "test-ymls/file-ops/copy-dir-mode-error.yml",
+            true,
+            &[],
+            "tests/servers/local.yml",
+            |output| {
+                assert!(
+                    output.contains("not supported when src is a directory"),
+                    "mode with a directory src should be rejected:\n{}",
+                    output
+                );
+            },
+        );
+    }
+
+    #[test]
+    fn file_unsupported_state_error() {
+        run_test_check(
+            "test-ymls/file-ops/file-state-error.yml",
+            true,
+            &[],
+            "tests/servers/local.yml",
+            |output| {
+                assert!(
+                    output.contains("supports only state: directory"),
+                    "non-directory state should be rejected:\n{}",
+                    output
+                );
+            },
+        );
+    }
 }
 
 mod tags {

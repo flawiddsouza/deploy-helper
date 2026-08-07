@@ -1,0 +1,7 @@
+- name: File module with unsupported state
+  hosts: test
+  tasks:
+    - name: Only directory state is supported
+      file:
+        path: /tmp/deploy-helper-test-file-state
+        state: touch

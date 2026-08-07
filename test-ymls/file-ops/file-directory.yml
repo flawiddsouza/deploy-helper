@@ -1,0 +1,21 @@
+- name: File module creates directories
+  hosts: test
+  tasks:
+    - name: Create nested directory with mode
+      file:
+        path: /tmp/deploy-helper-test-file-dir/nested
+        state: directory
+        mode: "0700"
+
+    - name: Create directory with owner and group
+      file:
+        path: /tmp/deploy-helper-test-file-owned
+        state: directory
+        mode: "0750"
+        owner: nopass
+        group: nopass
+
+    - name: Verify modes and ownership
+      shell: |
+        stat -c 'DIR1=%a' /tmp/deploy-helper-test-file-dir/nested
+        stat -c 'DIR2=%a:%U:%G' /tmp/deploy-helper-test-file-owned
