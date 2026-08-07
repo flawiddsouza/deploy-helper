@@ -1,0 +1,4 @@
+- name: Included block runs without set -u
+  shell: |
+    echo "unset expands to [$DH_TEST_UNSET_VAR]"
+    echo INCLUDE_OPT_OUT_RAN

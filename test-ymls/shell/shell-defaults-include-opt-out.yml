@@ -1,0 +1,7 @@
+- name: Include-level shell defaults opt out
+  hosts: test
+  shell_defaults: set -u
+  tasks:
+    - name: Include tasks with the default disabled
+      shell_defaults: ""
+      include_tasks: shell-defaults-include-opt-out-tasks.yml

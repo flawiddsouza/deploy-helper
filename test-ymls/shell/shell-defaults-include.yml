@@ -1,0 +1,6 @@
+- name: Shell defaults inherited by include
+  hosts: test
+  shell_defaults: set -u
+  tasks:
+    - name: Include tasks that must inherit the default
+      include_tasks: shell-defaults-include-tasks.yml

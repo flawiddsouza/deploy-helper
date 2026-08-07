@@ -1,0 +1,9 @@
+- name: Shell defaults opt out
+  hosts: test
+  shell_defaults: set -u
+  tasks:
+    - name: Task opts out of the deployment default
+      shell_defaults: ""
+      shell: |
+        echo "unset expands to [$DH_TEST_UNSET_VAR]"
+        echo OPT_OUT_RAN

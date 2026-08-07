@@ -1,0 +1,6 @@
+- name: Shell defaults strict mode
+  hosts: test
+  shell_defaults: set -u
+  tasks:
+    - name: Unset variable is an error under the deployment default
+      shell: echo "value= $DH_TEST_UNSET_VAR"

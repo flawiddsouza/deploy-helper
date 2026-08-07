@@ -455,6 +455,76 @@ mod shell {
         setup();
         run_tests_for_both_inventories("test-ymls/shell/include-tasks.yml", false, &[]);
     }
+
+    // shell_defaults: extra `set` flags injected ahead of every shell block.
+    // All run against localhost since only command construction is at stake.
+
+    #[test]
+    fn shell_defaults_make_unset_variable_fatal() {
+        run_test_check(
+            "test-ymls/shell/shell-defaults-strict.yml",
+            true,
+            &[],
+            "tests/servers/local.yml",
+            |_| {},
+        );
+    }
+
+    #[test]
+    fn shell_defaults_task_empty_string_opts_out() {
+        run_test_check(
+            "test-ymls/shell/shell-defaults-opt-out.yml",
+            false,
+            &[],
+            "tests/servers/local.yml",
+            |output| {
+                assert!(
+                    output.contains("OPT_OUT_RAN"),
+                    "opted-out task should run without set -u:\n{}",
+                    output
+                );
+            },
+        );
+    }
+
+    #[test]
+    fn shell_defaults_on_a_single_task() {
+        run_test_check(
+            "test-ymls/shell/shell-defaults-task-level.yml",
+            true,
+            &[],
+            "tests/servers/local.yml",
+            |_| {},
+        );
+    }
+
+    #[test]
+    fn shell_defaults_inherited_by_included_tasks() {
+        run_test_check(
+            "test-ymls/shell/shell-defaults-include.yml",
+            true,
+            &[],
+            "tests/servers/local.yml",
+            |_| {},
+        );
+    }
+
+    #[test]
+    fn shell_defaults_include_level_opt_out_covers_included_tasks() {
+        run_test_check(
+            "test-ymls/shell/shell-defaults-include-opt-out.yml",
+            false,
+            &[],
+            "tests/servers/local.yml",
+            |output| {
+                assert!(
+                    output.contains("INCLUDE_OPT_OUT_RAN"),
+                    "included block should run without the deployment's set -u:\n{}",
+                    output
+                );
+            },
+        );
+    }
 }
 
 mod privilege {

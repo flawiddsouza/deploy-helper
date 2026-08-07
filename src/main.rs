@@ -53,6 +53,7 @@ pub(crate) struct Deployment {
     pub(crate) hosts: String,
     pub(crate) chdir: Option<String>,
     pub(crate) login_shell: Option<bool>,
+    pub(crate) shell_defaults: Option<String>,
     pub(crate) r#become: Option<bool>,
     pub(crate) become_method: Option<String>,
     pub(crate) vars: Option<IndexMap<String, String>>,
@@ -76,6 +77,7 @@ fn process_tasks(
     tasks: &[common::Task],
     dep_chdir: Option<&str>,
     dep_login_shell: bool,
+    dep_shell_defaults: Option<&str>,
     dep_become: Option<bool>,
     dep_become_method: Option<&str>,
     ancestor_tags: &[String],
@@ -164,6 +166,9 @@ fn process_tasks(
 
         let use_login_shell = task.login_shell.unwrap_or(dep_login_shell);
         let no_log = task.no_log.unwrap_or(false);
+        // Task-level shell_defaults wins over the deployment's; an explicit
+        // empty string opts a task out of the deployment default.
+        let task_shell_defaults = task.shell_defaults.as_deref().or(dep_shell_defaults);
 
         let task_become = task.r#become.or(dep_become).unwrap_or(false);
         let task_become_method = task
@@ -215,6 +220,7 @@ fn process_tasks(
                 modules::command::process_shell_block(
                     shell_command,
                     display_segments,
+                    task_shell_defaults,
                     ctx.is_localhost,
                     ctx.session,
                     task_chdir.as_deref(),
@@ -302,6 +308,7 @@ fn process_tasks(
                     &included_tasks,
                     task_chdir.as_deref(),
                     use_login_shell,
+                    task_shell_defaults,
                     dep_become,
                     dep_become_method,
                     &effective_tags,
@@ -551,6 +558,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     &dep.tasks,
                     dep.chdir.as_deref(),
                     dep.login_shell.unwrap_or(false),
+                    dep.shell_defaults.as_deref(),
                     dep.r#become,
                     dep.become_method.as_deref(),
                     &dep_ancestor_tags,

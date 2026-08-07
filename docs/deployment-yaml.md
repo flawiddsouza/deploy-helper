@@ -57,6 +57,7 @@ Deployment fields:
 - `vars:` - vars set before the deployment's tasks run.
 - `chdir:` - default working directory for `shell:` and `command:` tasks. Tasks may override.
 - `login_shell:` - if true, `shell:` and `command:` run through a login shell (`$SHELL -l -i`) so `.bashrc`/`.zshrc` is loaded. Tasks may override.
+- `shell_defaults:` - a line injected ahead of every `shell:` block, e.g. `set -u` or `set -euo pipefail`, so strict mode needn't be repeated per block. Runs but is not echoed, like the built-in `set -e`. Tasks may override; an empty string opts a task out.
 - `become:` - if true, every task runs with privilege escalation by default. Tasks may override.
 - `become_method:` - default elevation tool (`sudo`, `doas`, or `su`) for the deployment's tasks; applies where `become:` is in effect. Tasks may override.
 - `tags:` - tags merged into every task's effective tag set. See [cli.md#tags](cli.md#tags).
@@ -201,6 +202,7 @@ These can be set on any task:
 - `loop: [...]` - run the action once per item; the current item is exposed as `{{ item }}`. List items may be scalars or maps (access fields as `{{ item.field }}`).
 - `become: true` - run as root. `become_method:` selects the elevation tool (`sudo` default, `doas`, or `su`). Both fall back to the deployment-level `become:`/`become_method:`. See [cli.md#privilege-escalation-prompt](cli.md#privilege-escalation-prompt) for `become_password` handling.
 - `login_shell: true` - run `shell:` and `command:` through a login shell. Falls back to the deployment-level `login_shell:`.
+- `shell_defaults: <line>` - override the deployment-level `shell_defaults:` for this task's `shell:` block. An empty string (`shell_defaults: ""`) disables the deployment default. Set on an `include_tasks:` task, the override applies to the included tasks (like `chdir:` and `login_shell:`).
 - `tags: [...]` - task-level tags; merged with deployment and `include_tasks` tags into the task's effective tag set. See [cli.md#tags](cli.md#tags).
 
 ## Vars and Templating

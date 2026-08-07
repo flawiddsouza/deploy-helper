@@ -144,6 +144,7 @@ fn handle_doas_pty_execution(
 pub fn process_shell_block(
     source: &str,
     display_segments: Vec<String>,
+    shell_defaults: Option<&str>,
     is_localhost: bool,
     session: Option<&Session>,
     task_chdir: Option<&str>,
@@ -163,7 +164,15 @@ pub fn process_shell_block(
     }
 
     let substituted_source = utils::replace_placeholders(source, vars_map);
-    let exec_source = format!("set -e\n{}", substituted_source);
+    // shell_defaults (e.g. "set -euo pipefail") is injected ahead of the block
+    // like the built-in set -e: it runs but is not echoed with the commands.
+    let defaults = shell_defaults
+        .map(|d| utils::replace_placeholders(d, vars_map))
+        .filter(|d| !d.trim().is_empty());
+    let exec_source = match defaults {
+        Some(d) => format!("set -e\n{}\n{}", d, substituted_source),
+        None => format!("set -e\n{}", substituted_source),
+    };
 
     let display_output = register.is_none() && !no_log;
 

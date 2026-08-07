@@ -1,0 +1,6 @@
+- name: Task level shell defaults
+  hosts: test
+  tasks:
+    - name: This task alone is strict
+      shell_defaults: set -u
+      shell: echo "$DH_TEST_UNSET_VAR"

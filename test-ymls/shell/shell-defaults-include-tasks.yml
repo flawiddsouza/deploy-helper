@@ -1,0 +1,2 @@
+- name: Included block under the deployment default
+  shell: echo "$DH_TEST_UNSET_VAR"
