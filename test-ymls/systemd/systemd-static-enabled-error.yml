@@ -1,0 +1,8 @@
+- name: Reject a static systemd unit as enabled
+  hosts: test
+  tasks:
+    - name: Verify the static unit is enabled
+      systemd:
+        units:
+          - name: static.unit
+            assert_enabled: true

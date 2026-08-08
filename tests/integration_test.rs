@@ -1225,6 +1225,122 @@ mod file_ops {
     }
 }
 
+mod systemd {
+    use super::*;
+
+    #[test]
+    fn systemd_manages_and_verifies_units() {
+        setup();
+        run_test_check(
+            "test-ymls/systemd/systemd.yml",
+            false,
+            &[],
+            "tests/servers/remote-ssh.yml",
+            |output| {
+                assert!(
+                    output.contains("SYSTEMD_OK"),
+                    "systemd should perform every requested operation:\n{}",
+                    output
+                );
+            },
+        );
+    }
+
+    #[test]
+    fn systemd_reports_unexpected_unit_result() {
+        setup();
+        run_test_check(
+            "test-ymls/systemd/systemd-result-error.yml",
+            true,
+            &[],
+            "tests/servers/remote-ssh.yml",
+            |output| {
+                assert!(
+                    output.contains(
+                        "systemd unit failed.service result: expected success, got failed"
+                    ),
+                    "systemd should report the expected and actual result:\n{}",
+                    output
+                );
+            },
+        );
+    }
+
+    #[test]
+    fn systemd_reports_inactive_unit() {
+        setup();
+        run_test_check(
+            "test-ymls/systemd/systemd-active-error.yml",
+            true,
+            &[],
+            "tests/servers/remote-ssh.yml",
+            |output| {
+                assert!(
+                    output.contains("systemd unit inactive.unit is not active"),
+                    "systemd should identify the inactive unit:\n{}",
+                    output
+                );
+            },
+        );
+    }
+
+    #[test]
+    fn systemd_reports_disabled_unit() {
+        setup();
+        run_test_check(
+            "test-ymls/systemd/systemd-enabled-error.yml",
+            true,
+            &[],
+            "tests/servers/remote-ssh.yml",
+            |output| {
+                assert!(
+                    output.contains("systemd unit disabled.unit is not enabled"),
+                    "systemd should identify the disabled unit:\n{}",
+                    output
+                );
+            },
+        );
+    }
+
+    #[test]
+    fn systemd_rejects_missing_unit_when_disabling() {
+        setup();
+        run_test_check(
+            "test-ymls/systemd/systemd-missing-disable-error.yml",
+            true,
+            &[],
+            "tests/servers/remote-ssh.yml",
+            |output| {
+                assert!(
+                    output.contains(
+                        "systemd failed to determine enabled state for unit missing.unit"
+                    ),
+                    "systemd should reject an enablement inspection error:\n{}",
+                    output
+                );
+            },
+        );
+    }
+
+    #[test]
+    fn systemd_rejects_static_unit_as_enabled() {
+        setup();
+        run_test_check(
+            "test-ymls/systemd/systemd-static-enabled-error.yml",
+            true,
+            &[],
+            "tests/servers/remote-ssh.yml",
+            |output| {
+                assert!(
+                    output.contains("systemd unit static.unit is not enabled (state: static)"),
+                    "systemd should not treat a static unit as enabled:\n{}",
+                    output
+                );
+            },
+        );
+    }
+}
+
 mod tags {
     use super::*;
 

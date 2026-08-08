@@ -7,5 +7,6 @@ pub mod filter;
 pub mod include_tasks;
 pub mod list_tasks;
 pub mod step;
+pub mod systemd;
 pub mod template;
 pub mod when;

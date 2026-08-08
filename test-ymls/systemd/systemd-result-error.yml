@@ -1,0 +1,8 @@
+- name: Reject an unexpected systemd result
+  hosts: test
+  tasks:
+    - name: Verify the failed unit result
+      systemd:
+        units:
+          - name: failed.service
+            assert_result: success

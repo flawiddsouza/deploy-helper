@@ -331,6 +331,20 @@ fn process_tasks(
                 )?;
             }
 
+            if let Some(spec) = &task.systemd {
+                modules::systemd::process(
+                    &task_name,
+                    spec,
+                    ctx.is_localhost,
+                    ctx.session,
+                    ctx.vars_map,
+                    task_become,
+                    &task_become_method,
+                    task_become_password,
+                    task.register.as_ref(),
+                )?;
+            }
+
             if let Some(include_file) = &task.include_tasks {
                 println!(
                     "{}",

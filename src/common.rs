@@ -78,6 +78,7 @@ pub struct Task {
     pub copy: Option<CopySpec>,
     pub file: Option<FileSpec>,
     pub env_file: Option<EnvFileSpec>,
+    pub systemd: Option<SystemdSpec>,
     pub tags: Option<Vec<String>>,
 }
 
@@ -134,6 +135,36 @@ pub struct EnvFileSecretsSpec {
 #[serde(rename_all = "lowercase")]
 pub enum EnvFileSecretsProvider {
     Sops,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SystemdSpec {
+    #[serde(default)]
+    pub daemon_reload: bool,
+    pub units: Vec<SystemdUnitSpec>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SystemdUnitSpec {
+    pub name: String,
+    pub enabled: Option<bool>,
+    pub state: Option<SystemdUnitState>,
+    #[serde(default)]
+    pub assert_enabled: bool,
+    #[serde(default)]
+    pub assert_active: bool,
+    pub assert_result: Option<String>,
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum SystemdUnitState {
+    Started,
+    Stopped,
+    Restarted,
+    Reloaded,
 }
 
 #[cfg(test)]
@@ -261,5 +292,23 @@ mod tests {
         let yaml = "defaults: .env.defaults\nsecrets:\n  provider: vault\n  src: secrets.env\ndest: .env\nmode: \"0600\"\n";
         let err = serde_yaml::from_str::<EnvFileSpec>(yaml).unwrap_err();
         assert!(err.to_string().contains("unknown variant `vault`"));
+    }
+
+    #[test]
+    fn systemd_spec_parses_multiple_units() {
+        let yaml = "daemon_reload: true\nunits:\n  - name: app.timer\n    enabled: true\n    state: started\n    assert_enabled: true\n    assert_active: true\n  - name: app.service\n    state: started\n    assert_result: success\n";
+        let spec: SystemdSpec = serde_yaml::from_str(yaml).unwrap();
+        assert!(spec.daemon_reload);
+        assert_eq!(spec.units.len(), 2);
+        assert_eq!(spec.units[0].state, Some(SystemdUnitState::Started));
+        assert!(spec.units[0].assert_enabled);
+        assert_eq!(spec.units[1].assert_result.as_deref(), Some("success"));
+    }
+
+    #[test]
+    fn systemd_spec_rejects_unknown_state() {
+        let yaml = "units:\n  - name: app.service\n    state: running\n";
+        let err = serde_yaml::from_str::<SystemdSpec>(yaml).unwrap_err();
+        assert!(err.to_string().contains("unknown variant `running`"));
     }
 }

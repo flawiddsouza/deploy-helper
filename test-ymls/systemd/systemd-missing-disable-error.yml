@@ -1,0 +1,8 @@
+- name: Reject a missing systemd unit when disabling
+  hosts: test
+  tasks:
+    - name: Disable the missing unit
+      systemd:
+        units:
+          - name: missing.unit
+            enabled: false

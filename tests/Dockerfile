@@ -12,6 +12,25 @@ RUN printf '%s\n' \
     'sed "s/^TEST_ENCRYPTED://" "$2"' \
     > /usr/local/bin/sops && chmod 755 /usr/local/bin/sops
 
+# Test-only systemctl stand-in. Alpine does not run systemd, so record calls
+# and return controlled unit states for the systemd module tests.
+RUN printf '%s\n' \
+    '#!/bin/sh' \
+    'printf "%s\n" "$*" >> /tmp/deploy-helper-systemctl.log' \
+    'case "$1" in' \
+    '  daemon-reload|enable|disable|start|stop|restart|reload) exit 0 ;;' \
+    '  is-active) case "$*" in *inactive.unit*) exit 3 ;; *) exit 0 ;; esac ;;' \
+    '  is-enabled) case "$*" in' \
+    '    *disabled.unit*) printf "disabled\n"; exit 1 ;;' \
+    '    *static.unit*) printf "static\n"; exit 0 ;;' \
+    '    *missing.unit*) printf "unit not found\n" >&2; exit 1 ;;' \
+    '    *) printf "enabled\n"; exit 0 ;;' \
+    '  esac ;;' \
+    '  show) case "$*" in *failed.service*) printf "failed\n" ;; *) printf "success\n" ;; esac ;;' \
+    '  *) exit 64 ;;' \
+    'esac' \
+    > /usr/local/bin/systemctl && chmod 755 /usr/local/bin/systemctl
+
 RUN ssh-keygen -A
 
 RUN echo "PasswordAuthentication yes" >> /etc/ssh/sshd_config && \

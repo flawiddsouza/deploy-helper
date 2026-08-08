@@ -1,0 +1,8 @@
+- name: Reject an inactive systemd unit
+  hosts: test
+  tasks:
+    - name: Verify the inactive unit
+      systemd:
+        units:
+          - name: inactive.unit
+            assert_active: true

@@ -67,7 +67,7 @@ Deployment fields:
 
 Unknown keys are rejected everywhere - deployments, tasks, action specs, and inventory hosts - so a typo like `dst:` for `dest:` is a parse error naming the bad key instead of silently doing nothing.
 
-Each task has a `name:` and one action key (`shell:`, `command:`, `template:`, `copy:`, `file:`, `env_file:`, `debug:`, or `include_tasks:`). `debug:` is the one action that may be paired with another action on the same task; it runs first. Modifiers (`register:`, `when:`, `loop:`, `vars:`, `chdir:`, `login_shell:`, `become:`, `become_method:`, `tags:`) may be added to any task.
+Each task has a `name:` and one action key (`shell:`, `command:`, `template:`, `copy:`, `file:`, `env_file:`, `systemd:`, `debug:`, or `include_tasks:`). `debug:` is the one action that may be paired with another action on the same task; it runs first. Modifiers (`register:`, `when:`, `loop:`, `vars:`, `chdir:`, `login_shell:`, `become:`, `become_method:`, `tags:`) may be added to any task.
 
 ### `shell:`
 
@@ -206,6 +206,36 @@ is chmod-ed before an atomic move to `dest:`. A failure removes temporary files
 and leaves an existing destination unchanged. `mode:` is required and follows
 the same quoting and octal validation rules as `copy:` and `template:`.
 
+### `systemd:`
+
+Manages and verifies one or more systemd units:
+
+```yaml
+- name: Enable and verify application backups
+  systemd:
+    daemon_reload: true
+    units:
+      - name: pizen-app-backup.timer
+        enabled: true
+        state: started
+        assert_active: true
+      - name: pizen-app-backup.service
+        state: started
+        assert_result: success
+```
+
+`daemon_reload:` runs `systemctl daemon-reload` before processing units. Each
+unit may set and verify `enabled: true` or `false`, request `state: started`, `stopped`,
+`restarted`, or `reloaded`, verify without changing that it is enabled with
+`assert_enabled: true`, verify that it is active with `assert_active: true`, and
+compare its systemd `Result` property with `assert_result:`. Unit names and asserted
+results support variable substitution. Units run in declaration order, and each
+unit must request at least one operation or assertion. Duplicate and empty unit
+names are rejected. `enabled: false` cannot be combined with `assert_enabled: true`,
+and `state: stopped` cannot be combined with `assert_active: true`. Enabled checks
+accept only systemd's `enabled` and `enabled-runtime` states. Missing units and
+other inspection errors fail instead of being treated as disabled.
+
 ### `debug:`
 
 Prints values from the current vars map. Useful for inspecting state mid-deployment.
@@ -231,8 +261,8 @@ The path is resolved relative to the deploy file's directory. Included tasks see
 
 These can be set on any task:
 
-- `register: <name>` - capture the action's result (`stdout`, `stderr`, `rc`) into a var. For `template:`, `copy:`, `file:`, and `env_file:` the captured value is empty (`{stdout: "", stderr: "", rc: 0}`) since there is no command output.
-- `no_log: true` - suppress this task's command echo and output (and `debug:` output) so secrets aren't printed. `copy:`/`template:`/`file:`/`env_file:` are unaffected since they never print their content. The `Executing task:` line still shows.
+- `register: <name>` - capture the action's result (`stdout`, `stderr`, `rc`) into a var. For `template:`, `copy:`, `file:`, `env_file:`, and `systemd:` the captured value is empty (`{stdout: "", stderr: "", rc: 0}`) since there is no command output.
+- `no_log: true` - suppress this task's command echo and output (and `debug:` output) so secrets aren't printed. `copy:`/`template:`/`file:`/`env_file:`/`systemd:` are unaffected since they never print their content. The `Executing task:` line still shows.
 - `vars:` - set vars before the action runs. Available for substitution in the same task.
 - `chdir: <path>` - working directory for `shell:`, `command:`, and `env_file:`. Falls back to the deployment-level `chdir:`.
 - `when: <expr>` - skip the task unless the expression evaluates true.

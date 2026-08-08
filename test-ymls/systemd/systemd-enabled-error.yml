@@ -1,0 +1,8 @@
+- name: Reject a disabled systemd unit
+  hosts: test
+  tasks:
+    - name: Verify the disabled unit
+      systemd:
+        units:
+          - name: disabled.unit
+            assert_enabled: true

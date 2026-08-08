@@ -1,0 +1,39 @@
+- name: Manage systemd units
+  hosts: test
+  vars:
+    unit_slug: example
+  tasks:
+    - name: Reset the systemctl call log
+      shell: rm -f /tmp/deploy-helper-systemctl.log
+
+    - name: Enable and verify the example units
+      systemd:
+        daemon_reload: true
+        units:
+          - name: "{{ unit_slug }}.timer"
+            enabled: true
+            state: started
+            assert_active: true
+          - name: "{{ unit_slug }}.service"
+            state: started
+            assert_result: success
+          - name: disabled.unit
+            enabled: false
+            state: stopped
+          - name: existing.timer
+            assert_enabled: true
+
+    - name: Verify systemctl calls
+      shell: |
+        grep -qx 'daemon-reload' /tmp/deploy-helper-systemctl.log
+        grep -qx 'enable example.timer' /tmp/deploy-helper-systemctl.log
+        grep -qx 'is-enabled example.timer' /tmp/deploy-helper-systemctl.log
+        grep -qx 'start example.timer' /tmp/deploy-helper-systemctl.log
+        grep -qx 'is-active --quiet example.timer' /tmp/deploy-helper-systemctl.log
+        grep -qx 'start example.service' /tmp/deploy-helper-systemctl.log
+        grep -qx 'show -p Result --value example.service' /tmp/deploy-helper-systemctl.log
+        grep -qx 'disable disabled.unit' /tmp/deploy-helper-systemctl.log
+        grep -qx 'is-enabled disabled.unit' /tmp/deploy-helper-systemctl.log
+        grep -qx 'stop disabled.unit' /tmp/deploy-helper-systemctl.log
+        grep -qx 'is-enabled existing.timer' /tmp/deploy-helper-systemctl.log
+        echo SYSTEMD_OK
