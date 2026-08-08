@@ -1,0 +1,13 @@
+---
+  - name: Test invalid env output
+    hosts: test
+    tasks:
+      - name: Produce malformed env output
+        no_log: true
+        shell: printf 'secret=top-secret-value\nmissing-separator\n'
+        register: manifest_output
+
+      - name: Parse malformed env output
+        no_log: true
+        vars:
+          manifest: "{{ manifest_output.stdout | from_env }}"

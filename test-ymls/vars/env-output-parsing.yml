@@ -1,0 +1,24 @@
+---
+  - name: Test env output parsing
+    hosts: test
+    tasks:
+      - name: Produce an env manifest
+        shell: |
+          printf '%s\n' \
+            '# deployment manifest' \
+            '' \
+            'database_sha256=abc123' \
+            'files=42' \
+            'url=https://example.com?a=b' \
+            'empty='
+        register: manifest_output
+
+      - name: Parse the env manifest
+        vars:
+          manifest: "{{ manifest_output.stdout | from_env }}"
+        debug:
+          msg: >-
+            database_sha256={{ manifest.database_sha256 }}
+            files={{ manifest.files }}
+            url={{ manifest.url }}
+            empty={{ manifest.empty }}

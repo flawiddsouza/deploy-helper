@@ -330,3 +330,22 @@ The `from_json` filter parses a JSON string into a value:
   debug:
     msg: "{{ parsed.Credentials.AccessKeyId }}"
 ```
+
+The `from_env` filter parses simple `KEY=VALUE` output into a map:
+
+```yaml
+- name: Read a manifest
+  command: print-manifest
+  register: manifest_output
+
+- name: Use the manifest
+  vars:
+    manifest: "{{ manifest_output.stdout | from_env }}"
+  debug:
+    msg: "{{ manifest.database_sha256 }}"
+```
+
+Keys must use letters, digits, and underscores, and cannot start with a digit.
+Blank lines and comment lines beginning with `#` are ignored. Values remain
+literal strings, may be empty, and may contain additional `=` characters.
+Repeated keys and malformed lines are errors.

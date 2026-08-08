@@ -457,6 +457,53 @@ mod vars {
     }
 
     #[test]
+    fn env_output_parsing() {
+        setup();
+        for inventory in ["tests/servers/local.yml", "tests/servers/remote.yml"] {
+            run_test_check(
+                "test-ymls/vars/env-output-parsing.yml",
+                false,
+                &[],
+                inventory,
+                |output| {
+                    assert!(
+                        output.contains(
+                            "database_sha256=abc123 files=42 url=https://example.com?a=b empty="
+                        ),
+                        "from_env should expose parsed fields:\n{}",
+                        output
+                    );
+                },
+            );
+        }
+    }
+
+    #[test]
+    fn invalid_env_output_error() {
+        setup();
+        for inventory in ["tests/servers/local.yml", "tests/servers/remote.yml"] {
+            run_test_check(
+                "test-ymls/vars/invalid-env-output-error.yml",
+                true,
+                &[],
+                inventory,
+                |output| {
+                    assert!(
+                        output.contains("Error parsing env: line 2 must be KEY=VALUE"),
+                        "from_env should explain malformed lines:\n{}",
+                        output
+                    );
+                    assert!(
+                        !output.contains("top-secret-value"),
+                        "from_env should not expose malformed secret output:\n{}",
+                        output
+                    );
+                },
+            );
+        }
+    }
+
+    #[test]
     fn extra_vars() {
         setup();
         run_tests_for_both_inventories("test-ymls/vars/extra-vars.yml", false, &["cat=1 bat=2"]);

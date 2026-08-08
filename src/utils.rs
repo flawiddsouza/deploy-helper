@@ -131,6 +131,7 @@ pub fn replace_placeholders(msg: &str, vars: &IndexMap<String, Value>) -> String
     let mut env = Environment::new();
     env.set_undefined_behavior(UndefinedBehavior::Strict);
     env.add_filter("from_json", from_json_filter);
+    env.add_filter("from_env", from_env_filter);
     let template = env.template_from_str(msg).unwrap();
     let mut context = IndexMap::new();
 
@@ -163,7 +164,7 @@ pub fn replace_placeholders(msg: &str, vars: &IndexMap<String, Value>) -> String
 pub fn replace_placeholders_vars(msg: &str, vars: &IndexMap<String, Value>) -> Value {
     let rendered_str = replace_placeholders(msg, vars);
 
-    if msg.contains("from_json") {
+    if uses_template_filter(msg, "from_json") {
         serde_json::from_str(&rendered_str).unwrap_or_else(|err| {
             eprintln!(
                 "{}",
@@ -171,9 +172,62 @@ pub fn replace_placeholders_vars(msg: &str, vars: &IndexMap<String, Value>) -> V
             );
             exit(1);
         })
+    } else if uses_template_filter(msg, "from_env") {
+        parse_env_output(&rendered_str).unwrap_or_else(|err| {
+            eprintln!(
+                "{}",
+                format!("Error parsing env: {}\nat {}", err, msg).red()
+            );
+            exit(1);
+        })
     } else {
         Value::String(rendered_str)
     }
+}
+
+fn uses_template_filter(template: &str, filter: &str) -> bool {
+    let template = template.trim();
+    let Some(expression) = template
+        .strip_prefix("{{")
+        .and_then(|value| value.strip_suffix("}}"))
+    else {
+        return false;
+    };
+    if expression.contains("{{") || expression.contains("}}") {
+        return false;
+    }
+
+    let mut quote = None;
+    let mut escaped = false;
+    for (index, character) in expression.char_indices() {
+        if let Some(quote_character) = quote {
+            if escaped {
+                escaped = false;
+            } else if character == '\\' {
+                escaped = true;
+            } else if character == quote_character {
+                quote = None;
+            }
+            continue;
+        }
+        if character == '\'' || character == '"' {
+            quote = Some(character);
+            continue;
+        }
+        if character != '|' {
+            continue;
+        }
+        let remainder = expression[index + character.len_utf8()..].trim_start();
+        if remainder.strip_prefix(filter).is_some_and(|after_filter| {
+            after_filter
+                .chars()
+                .next()
+                .is_none_or(|next| !next.is_ascii_alphanumeric() && next != '_')
+        }) {
+            return true;
+        }
+    }
+    false
 }
 
 fn heredoc_delimiter(line: &str) -> Option<String> {
@@ -355,6 +409,38 @@ pub fn split_commands(input: &str) -> Vec<String> {
 
 pub fn from_json_filter(value: MiniJinjaValue) -> MiniJinjaValue {
     value
+}
+
+pub fn from_env_filter(value: MiniJinjaValue) -> MiniJinjaValue {
+    value
+}
+
+fn parse_env_output(input: &str) -> Result<Value, String> {
+    let mut parsed = serde_json::Map::new();
+    for (index, line) in input.lines().enumerate() {
+        let line_number = index + 1;
+        if line.trim().is_empty() || line.trim_start().starts_with('#') {
+            continue;
+        }
+        let Some((key, value)) = line.split_once('=') else {
+            return Err(format!("line {} must be KEY=VALUE", line_number));
+        };
+        let mut chars = key.chars();
+        let key_valid = chars
+            .next()
+            .is_some_and(|first| first == '_' || first.is_ascii_alphabetic())
+            && chars.all(|character| character == '_' || character.is_ascii_alphanumeric());
+        if !key_valid {
+            return Err(format!("line {} has invalid key '{}'", line_number, key));
+        }
+        if parsed
+            .insert(key.to_string(), Value::String(value.to_string()))
+            .is_some()
+        {
+            return Err(format!("line {} repeats key '{}'", line_number, key));
+        }
+    }
+    Ok(Value::Object(parsed))
 }
 
 fn annotate_yaml_error(filename: &str, contents: &str, err: serde_yaml::Error) -> String {
@@ -1265,6 +1351,59 @@ mod tests {
                 key
             );
         }
+    }
+
+    #[test]
+    fn test_parse_env_output_preserves_literal_values() {
+        let parsed = parse_env_output(
+            "database_sha256=abc123\nfiles=42\nurl=https://example.com?a=b\nempty=\n",
+        )
+        .unwrap();
+        assert_eq!(parsed["database_sha256"], "abc123");
+        assert_eq!(parsed["files"], "42");
+        assert_eq!(parsed["url"], "https://example.com?a=b");
+        assert_eq!(parsed["empty"], "");
+    }
+
+    #[test]
+    fn test_parse_env_output_ignores_blank_lines_and_comments() {
+        let parsed = parse_env_output("# manifest\n\nstatus=healthy\n").unwrap();
+        assert_eq!(parsed["status"], "healthy");
+    }
+
+    #[test]
+    fn test_parse_env_output_rejects_invalid_and_repeated_keys() {
+        assert_eq!(
+            parse_env_output("valid=1\nnot valid=2").unwrap_err(),
+            "line 2 has invalid key 'not valid'"
+        );
+        assert_eq!(
+            parse_env_output("key=first\nkey=second").unwrap_err(),
+            "line 2 repeats key 'key'"
+        );
+        assert_eq!(
+            parse_env_output("valid=1\nmissing").unwrap_err(),
+            "line 2 must be KEY=VALUE"
+        );
+    }
+
+    #[test]
+    fn test_structured_filter_names_in_plain_text_remain_strings() {
+        let vars = IndexMap::new();
+        for (template, expected) in [
+            ("support from_json and from_env", "support from_json and from_env"),
+            ("printf value | from_env", "printf value | from_env"),
+            ("{{ 'printf value | from_env' }}", "printf value | from_env"),
+        ] {
+            assert_eq!(
+                replace_placeholders_vars(template, &vars),
+                Value::String(expected.to_string())
+            );
+        }
+        assert!(uses_template_filter(
+            "{{ manifest_output.stdout | from_env }}",
+            "from_env"
+        ));
     }
 
     #[test]
