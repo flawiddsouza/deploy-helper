@@ -1,0 +1,7 @@
+- name: Hide verification details
+  hosts: test
+  tasks:
+    - name: Check a secret value
+      no_log: true
+      verify:
+        command: printf 'VERIFY_SUPER_SECRET'; exit 1

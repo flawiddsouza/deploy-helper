@@ -766,6 +766,27 @@ pub fn execute_local_doas_with_pty(
     Ok((combined.trim_end_matches(['\n', '\r']).to_string(), String::new(), exit_code))
 }
 
+// A doas PTY merges its authentication prompt into stdout. Remove only that
+// protocol text before an action inspects or registers the command output.
+// The command's own leading whitespace must remain intact for exact matching.
+fn strip_doas_password_prompt(output: &str) -> String {
+    let output_lower = output.to_ascii_lowercase();
+    let Some(prompt_start) = output_lower.find("password:") else {
+        return output.to_string();
+    };
+
+    let mut command_output = &output[prompt_start + "password:".len()..];
+    if let Some(rest) = command_output.strip_prefix(' ') {
+        command_output = rest;
+    }
+    if let Some(rest) = command_output.strip_prefix("\r\n") {
+        command_output = rest;
+    } else if let Some(rest) = command_output.strip_prefix(['\r', '\n']) {
+        command_output = rest;
+    }
+    command_output.to_string()
+}
+
 // Runs `command` on the target through the same become/doas plumbing the file
 // writes use, without displaying output. Returns (stdout, stderr, exit_code);
 // the doas-PTY path merges stderr into stdout.
@@ -777,6 +798,43 @@ pub fn run_shell_on_target(
     become_method: &str,
     become_password: Option<&str>,
 ) -> Result<(String, String, i32), Box<dyn std::error::Error>> {
+    run_shell_on_target_with_context(
+        command,
+        is_localhost,
+        session,
+        become_enabled,
+        become_method,
+        become_password,
+        None,
+        false,
+        None,
+    )
+}
+
+// Runs one shell command with the task execution context and returns its raw
+// result without displaying output. Environment exports stay inside a become
+// wrapper so privilege escalation cannot discard them.
+#[allow(clippy::too_many_arguments)]
+pub fn run_shell_on_target_with_context(
+    command: &str,
+    is_localhost: bool,
+    session: Option<&Session>,
+    become_enabled: bool,
+    become_method: &str,
+    become_password: Option<&str>,
+    chdir: Option<&str>,
+    login_shell: bool,
+    env: Option<&IndexMap<String, String>>,
+) -> Result<(String, String, i32), Box<dyn std::error::Error>> {
+    let command_with_env = match env {
+        Some(env) if !env.is_empty() => format!(
+            "{{\n{}\n{}\n}}",
+            env_export_lines(env).join("\n"),
+            command
+        ),
+        _ => command.to_string(),
+    };
+
     // doas reads its password from /dev/tty, so a doas-with-password command
     // must go through a PTY, not the piped wrap_become path.
     let doas_pw = if become_enabled && become_method == "doas" {
@@ -786,34 +844,39 @@ pub fn run_shell_on_target(
     };
 
     if let Some(password) = doas_pw {
-        let doas_cmd = wrap_become_command(command, "doas", None);
-        if is_localhost {
+        let doas_cmd = wrap_become_command(&command_with_env, "doas", None);
+        let result = if is_localhost {
             #[cfg(unix)]
             {
-                return execute_local_doas_with_pty(&doas_cmd, password, false, None, false);
+                execute_local_doas_with_pty(&doas_cmd, password, false, chdir, login_shell)
             }
             #[cfg(not(unix))]
             {
                 let _ = password;
-                return Err(
-                    "doas with become_password is not supported on non-Unix platforms".into()
-                );
+                Err(
+                    "doas with become_password is not supported on non-Unix platforms".into(),
+                )
             }
-        }
-        let session = session.ok_or("run_shell_on_target: remote target requires session")?;
-        return execute_ssh_doas_with_pty(session, &doas_cmd, password, false, None, false);
+        } else {
+            let session =
+                session.ok_or("run_shell_on_target_with_context: remote target requires session")?;
+            execute_ssh_doas_with_pty(session, &doas_cmd, password, false, chdir, login_shell)
+        };
+        let (stdout, stderr, rc) = result?;
+        return Ok((strip_doas_password_prompt(&stdout), stderr, rc));
     }
 
     let cmd = if become_enabled {
-        wrap_become_command(command, become_method, become_password)
+        wrap_become_command(&command_with_env, become_method, become_password)
     } else {
-        command.to_string()
+        command_with_env
     };
     if is_localhost {
-        execute_local_command(&cmd, true, false, None, false, None)
+        execute_local_command(&cmd, true, false, chdir, login_shell, None)
     } else {
-        let session = session.ok_or("run_shell_on_target: remote target requires session")?;
-        execute_ssh_command(session, &cmd, true, false, None, false)
+        let session =
+            session.ok_or("run_shell_on_target_with_context: remote target requires session")?;
+        execute_ssh_command(session, &cmd, true, false, chdir, login_shell)
     }
 }
 
@@ -1475,6 +1538,19 @@ mod tests {
                 "if [ -z \"$existing\" ]; then\ncurl -X POST ...\nsleep 30\nfi"
             ]
         );
+    }
+
+    // doas output cleanup
+
+    #[test]
+    fn test_strip_doas_password_prompt_preserves_command_whitespace() {
+        let output = "\rdoas (user@host) password: \r\n  root";
+        assert_eq!(strip_doas_password_prompt(output), "  root");
+    }
+
+    #[test]
+    fn test_strip_doas_password_prompt_leaves_normal_output_unchanged() {
+        assert_eq!(strip_doas_password_prompt("root"), "root");
     }
 
     // wrap_become_command

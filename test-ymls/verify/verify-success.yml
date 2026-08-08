@@ -1,0 +1,44 @@
+- name: Verify retry and output matching
+  hosts: test
+  chdir: /tmp
+  vars:
+    expected_suffix: ready
+  environment:
+    VERIFY_SUFFIX: "{{ expected_suffix }}"
+  tasks:
+    - name: Reset the verification counter
+      shell: rm -f deploy-helper-verify-counter
+
+    - name: Retry until the expected output appears
+      verify:
+        command: |
+          count=$(cat deploy-helper-verify-counter 2>/dev/null || printf 0)
+          count=$((count + 1))
+          printf '%s' "$count" > deploy-helper-verify-counter
+          if [ "$count" -lt 3 ]; then
+            printf 'starting'
+          else
+            printf 'healthy-%s' "$VERIFY_SUFFIX"
+          fi
+        expect:
+          equals: "healthy-{{ expected_suffix }}"
+        retry:
+          attempts: 3
+          delay_seconds: 0
+      register: verify_result
+
+    - name: Match output with a regular expression
+      verify:
+        command: printf 'service=healthy 12'
+        expect:
+          regex: '^service=healthy [0-9]+$'
+
+    - name: Allow a trailing shell comment with environment
+      verify:
+        command: "printf 'comment-safe' # the wrapper must close on its own line"
+        expect:
+          equals: comment-safe
+
+    - name: Show the registered final output
+      debug:
+        msg: "{{ verify_result.stdout }}"

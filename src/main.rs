@@ -345,6 +345,24 @@ fn process_tasks(
                 )?;
             }
 
+            if let Some(spec) = &task.verify {
+                modules::verify::process(
+                    &task_name,
+                    spec,
+                    task_environment.as_ref(),
+                    ctx.is_localhost,
+                    ctx.session,
+                    task_chdir.as_deref(),
+                    task.register.as_ref(),
+                    use_login_shell,
+                    ctx.vars_map,
+                    task_become,
+                    &task_become_method,
+                    task_become_password,
+                    no_log,
+                )?;
+            }
+
             if let Some(include_file) = &task.include_tasks {
                 println!(
                     "{}",

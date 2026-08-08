@@ -20,5 +20,6 @@ simple-expand-tilde = "0.4.4"
 clap = "4.5.20"
 rpassword = "7.4.0"
 expectrl = "0.8"
+regex = "1.11"
 
 [dev-dependencies]

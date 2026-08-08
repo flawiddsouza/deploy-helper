@@ -9,4 +9,5 @@ pub mod list_tasks;
 pub mod step;
 pub mod systemd;
 pub mod template;
+pub mod verify;
 pub mod when;

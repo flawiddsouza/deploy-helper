@@ -55,10 +55,10 @@ Deployment fields:
 - `hosts:` - comma-separated list of host names from the inventory. The deployment runs against each host in turn.
 - `tasks:` - list of tasks (see below).
 - `vars:` - vars set before the deployment's tasks run.
-- `chdir:` - default working directory for `shell:`, `command:`, and `env_file:` tasks. Tasks may override.
-- `login_shell:` - if true, `shell:` and `command:` run through a login shell (`$SHELL -l -i`) so `.bashrc`/`.zshrc` is loaded. Tasks may override.
+- `chdir:` - default working directory for `shell:`, `command:`, `verify:`, and `env_file:` tasks. Tasks may override.
+- `login_shell:` - if true, `shell:`, `command:`, and `verify:` run through a login shell (`$SHELL -l -i`) so `.bashrc`/`.zshrc` is loaded. Tasks may override.
 - `shell_defaults:` - a line injected ahead of every `shell:` block, e.g. `set -u` or `set -euo pipefail`, so strict mode needn't be repeated per block. Runs but is not echoed, like the built-in `set -e`. Tasks may override; an empty string opts a task out.
-- `environment:` - map of environment variables exported for every `shell:` and `command:` task. Values are rendered through MiniJinja; keys must be plain identifiers. Never echoed, so secret values stay out of the output, and the exports ride inside the `become` wrapper so sudo/doas/su env resets don't strip them. Task-level entries merge over the deployment map per key.
+- `environment:` - map of environment variables exported for every `shell:`, `command:`, and `verify:` task. Values are rendered through MiniJinja; keys must be plain identifiers. Never echoed, so secret values stay out of the output, and the exports ride inside the `become` wrapper so sudo/doas/su env resets don't strip them. Task-level entries merge over the deployment map per key.
 - `become:` - if true, every task runs with privilege escalation by default. Tasks may override.
 - `become_method:` - default elevation tool (`sudo`, `doas`, or `su`) for the deployment's tasks; applies where `become:` is in effect. Tasks may override.
 - `tags:` - tags merged into every task's effective tag set. See [cli.md#tags](cli.md#tags).
@@ -67,7 +67,7 @@ Deployment fields:
 
 Unknown keys are rejected everywhere - deployments, tasks, action specs, and inventory hosts - so a typo like `dst:` for `dest:` is a parse error naming the bad key instead of silently doing nothing.
 
-Each task has a `name:` and one action key (`shell:`, `command:`, `template:`, `copy:`, `file:`, `env_file:`, `systemd:`, `debug:`, or `include_tasks:`). `debug:` is the one action that may be paired with another action on the same task; it runs first. Modifiers (`register:`, `when:`, `loop:`, `vars:`, `chdir:`, `login_shell:`, `become:`, `become_method:`, `tags:`) may be added to any task.
+Each task has a `name:` and one action key (`shell:`, `command:`, `template:`, `copy:`, `file:`, `env_file:`, `systemd:`, `verify:`, `debug:`, or `include_tasks:`). `debug:` is the one action that may be paired with another action on the same task; it runs first. Modifiers (`register:`, `when:`, `loop:`, `vars:`, `chdir:`, `login_shell:`, `become:`, `become_method:`, `tags:`) may be added to any task.
 
 ### `shell:`
 
@@ -236,6 +236,41 @@ and `state: stopped` cannot be combined with `assert_active: true`. Enabled chec
 accept only systemd's `enabled` and `enabled-runtime` states. Missing units and
 other inspection errors fail instead of being treated as disabled.
 
+### `verify:`
+
+Runs one shell command until it succeeds and its stdout matches an optional
+expectation:
+
+```yaml
+- name: Wait for the application to become healthy
+  verify:
+    command: docker inspect --format '{{ "{{" }}.State.Health.Status{{ "}}" }}' app
+    expect:
+      equals: healthy
+    retry:
+      attempts: 12
+      delay_seconds: 5
+      max_elapsed_seconds: 60
+```
+
+`command:` runs as one shell invocation. A non-zero exit status always fails
+the attempt. `expect:` may contain exactly one matcher:
+
+- `equals:` compares the complete stdout exactly. The command runner removes
+  trailing line endings but preserves all other whitespace.
+- `regex:` succeeds when the Rust regular expression matches anywhere in
+  stdout. Use anchors such as `^` and `$` when the whole output must match.
+
+Without `expect:`, an exit status of zero is enough. Without `retry:`, the
+command runs once. `retry.attempts` includes the first run and must be at least
+1. `retry.delay_seconds` defaults to 0. `retry.max_elapsed_seconds` optionally
+stops starting new attempts once that many seconds have elapsed and skips a
+retry when its delay would reach the limit. An attempt already running is
+allowed to finish. Commands, expected values, regexes, and
+environment values support variable substitution. The final failure reports
+the exit code or expected versus actual output. `no_log: true` hides the
+command and failure details.
+
 ### `debug:`
 
 Prints values from the current vars map. Useful for inspecting state mid-deployment.
@@ -261,18 +296,18 @@ The path is resolved relative to the deploy file's directory. Included tasks see
 
 These can be set on any task:
 
-- `register: <name>` - capture the action's result (`stdout`, `stderr`, `rc`) into a var. For `template:`, `copy:`, `file:`, `env_file:`, and `systemd:` the captured value is empty (`{stdout: "", stderr: "", rc: 0}`) since there is no command output.
-- `no_log: true` - suppress this task's command echo and output (and `debug:` output) so secrets aren't printed. `copy:`/`template:`/`file:`/`env_file:`/`systemd:` are unaffected since they never print their content. The `Executing task:` line still shows.
+- `register: <name>` - capture the action's result (`stdout`, `stderr`, `rc`) into a var. `verify:` captures the final successful attempt. For `template:`, `copy:`, `file:`, `env_file:`, and `systemd:` the captured value is empty (`{stdout: "", stderr: "", rc: 0}`) since there is no command output.
+- `no_log: true` - suppress this task's command echo and output (and `debug:` output) so secrets aren't printed. For `verify:`, it also hides failure details. `copy:`/`template:`/`file:`/`env_file:`/`systemd:` are unaffected since they never print their content. The `Executing task:` line still shows.
 - `vars:` - set vars before the action runs. Available for substitution in the same task.
-- `chdir: <path>` - working directory for `shell:`, `command:`, and `env_file:`. Falls back to the deployment-level `chdir:`.
+- `chdir: <path>` - working directory for `shell:`, `command:`, `verify:`, and `env_file:`. Falls back to the deployment-level `chdir:`.
 - `when: <expr>` - skip the task unless the expression evaluates true.
 - `creates: <path>` - skip the task if `<path>` already exists on the target (checked with `test -e`). Idempotency guard for `shell:`/`command:`.
 - `removes: <path>` - skip the task if `<path>` does not exist on the target. Idempotency guard for `shell:`/`command:`.
 - `loop: [...]` - run the action once per item; the current item is exposed as `{{ item }}`. List items may be scalars or maps (access fields as `{{ item.field }}`).
 - `become: true` - run as root. `become_method:` selects the elevation tool (`sudo` default, `doas`, or `su`). Both fall back to the deployment-level `become:`/`become_method:`. See [cli.md#privilege-escalation-prompt](cli.md#privilege-escalation-prompt) for `become_password` handling.
-- `login_shell: true` - run `shell:` and `command:` through a login shell. Falls back to the deployment-level `login_shell:`.
+- `login_shell: true` - run `shell:`, `command:`, and `verify:` through a login shell. Falls back to the deployment-level `login_shell:`.
 - `shell_defaults: <line>` - override the deployment-level `shell_defaults:` for this task's `shell:` block. An empty string (`shell_defaults: ""`) disables the deployment default. Set on an `include_tasks:` task, the override applies to the included tasks (like `chdir:` and `login_shell:`).
-- `environment:` - environment variables for this task's `shell:`/`command:`, merged over the deployment-level map (task entries win per key). Set on an `include_tasks:` task, the merged map applies to the included tasks.
+- `environment:` - environment variables for this task's `shell:`/`command:`/`verify:`, merged over the deployment-level map (task entries win per key). Set on an `include_tasks:` task, the merged map applies to the included tasks.
 - `tags: [...]` - task-level tags; merged with deployment and `include_tasks` tags into the task's effective tag set. See [cli.md#tags](cli.md#tags).
 
 ## Vars and Templating

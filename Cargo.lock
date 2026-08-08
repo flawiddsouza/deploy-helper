@@ -155,6 +155,7 @@ dependencies = [
  "indexmap",
  "minijinja",
  "openssl",
+ "regex",
  "rpassword",
  "serde",
  "serde_json",

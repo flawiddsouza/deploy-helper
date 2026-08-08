@@ -1,0 +1,12 @@
+- name: Verify retry elapsed time limit
+  hosts: test
+  tasks:
+    - name: Stop before a retry that exceeds the elapsed time limit
+      verify:
+        command: printf starting
+        expect:
+          equals: healthy
+        retry:
+          attempts: 5
+          delay_seconds: 2
+          max_elapsed_seconds: 1

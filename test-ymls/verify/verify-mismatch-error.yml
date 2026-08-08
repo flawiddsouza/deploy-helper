@@ -1,0 +1,11 @@
+- name: Report a verification mismatch
+  hosts: test
+  tasks:
+    - name: Wait for health
+      verify:
+        command: printf 'starting'
+        expect:
+          equals: healthy
+        retry:
+          attempts: 2
+          delay_seconds: 0

@@ -79,6 +79,7 @@ pub struct Task {
     pub file: Option<FileSpec>,
     pub env_file: Option<EnvFileSpec>,
     pub systemd: Option<SystemdSpec>,
+    pub verify: Option<VerifySpec>,
     pub tags: Option<Vec<String>>,
 }
 
@@ -165,6 +166,30 @@ pub enum SystemdUnitState {
     Stopped,
     Restarted,
     Reloaded,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct VerifySpec {
+    pub command: String,
+    pub expect: Option<VerifyExpectation>,
+    pub retry: Option<VerifyRetry>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct VerifyExpectation {
+    pub equals: Option<String>,
+    pub regex: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct VerifyRetry {
+    pub attempts: u32,
+    #[serde(default)]
+    pub delay_seconds: u64,
+    pub max_elapsed_seconds: Option<u64>,
 }
 
 #[cfg(test)]
@@ -310,5 +335,22 @@ mod tests {
         let yaml = "units:\n  - name: app.service\n    state: running\n";
         let err = serde_yaml::from_str::<SystemdSpec>(yaml).unwrap_err();
         assert!(err.to_string().contains("unknown variant `running`"));
+    }
+
+    #[test]
+    fn verify_spec_parses_namespaced_matcher_and_retry() {
+        let yaml = "command: docker inspect app\nexpect:\n  equals: healthy\nretry:\n  attempts: 12\n  delay_seconds: 5\n  max_elapsed_seconds: 60\n";
+        let spec: VerifySpec = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(spec.expect.unwrap().equals.as_deref(), Some("healthy"));
+        let retry = spec.retry.unwrap();
+        assert_eq!(retry.attempts, 12);
+        assert_eq!(retry.max_elapsed_seconds, Some(60));
+    }
+
+    #[test]
+    fn verify_spec_rejects_old_flat_matcher() {
+        let yaml = "command: echo healthy\nexpect_regex: healthy\n";
+        let err = serde_yaml::from_str::<VerifySpec>(yaml).unwrap_err();
+        assert!(err.to_string().contains("unknown field `expect_regex`"));
     }
 }

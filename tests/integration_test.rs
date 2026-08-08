@@ -224,6 +224,191 @@ fn run_test_check<F>(
     check(&full_output);
 }
 
+#[cfg(test)]
+mod verify_tests {
+    use super::*;
+
+    #[test]
+    fn verify_retries_matches_and_registers_output() {
+        setup();
+        for inventory in ["tests/servers/local.yml", "tests/servers/remote.yml"] {
+            run_test_check(
+                "test-ymls/verify/verify-success.yml",
+                false,
+                &[],
+                inventory,
+                |output| {
+                    assert_eq!(
+                        output.matches("Verification attempt").count(),
+                        2,
+                        "verify should retry twice before succeeding:\n{}",
+                        output
+                    );
+                    assert!(
+                        output.contains("Registering output to: verify_result")
+                            && output.contains("healthy-ready"),
+                        "verify should register the final matching output:\n{}",
+                        output
+                    );
+                },
+            );
+        }
+    }
+
+    #[test]
+    fn verify_reports_expected_and_actual_output() {
+        setup();
+        for inventory in ["tests/servers/local.yml", "tests/servers/remote.yml"] {
+            run_test_check(
+                "test-ymls/verify/verify-mismatch-error.yml",
+                true,
+                &[],
+                inventory,
+                |output| {
+                    assert!(
+                        output.contains("failed after 2 attempts")
+                            && output.contains("expected stdout 'healthy', got 'starting'"),
+                        "verify should report the final mismatch:\n{}",
+                        output
+                    );
+                },
+            );
+        }
+    }
+
+    #[test]
+    fn verify_reports_command_exit_and_stderr() {
+        setup();
+        for inventory in ["tests/servers/local.yml", "tests/servers/remote.yml"] {
+            run_test_check(
+                "test-ymls/verify/verify-command-error.yml",
+                true,
+                &[],
+                inventory,
+                |output| {
+                    assert!(
+                        output.contains("command exited with status 7: not-ready"),
+                        "verify should report the command failure:\n{}",
+                        output
+                    );
+                },
+            );
+        }
+    }
+
+    #[test]
+    fn verify_stops_before_retrying_past_the_elapsed_time_limit() {
+        setup();
+        for inventory in ["tests/servers/local.yml", "tests/servers/remote.yml"] {
+            run_test_check(
+                "test-ymls/verify/verify-time-limit-error.yml",
+                true,
+                &[],
+                inventory,
+                |output| {
+                    assert!(
+                        output.contains("failed after 1 attempt")
+                            && output.contains(
+                                "elapsed time limit of 1 second prevented further retries"
+                            )
+                            && !output.contains("Verification attempt"),
+                        "verify should stop before a retry beyond its elapsed time limit:\n{}",
+                        output
+                    );
+                },
+            );
+        }
+    }
+
+    #[test]
+    fn verify_allows_a_running_attempt_to_cross_the_elapsed_time_limit() {
+        setup();
+        for inventory in ["tests/servers/local.yml", "tests/servers/remote.yml"] {
+            run_test_check(
+                "test-ymls/verify/verify-running-attempt-crosses-time-limit.yml",
+                true,
+                &[],
+                inventory,
+                |output| {
+                    assert!(
+                        output.contains("failed after 1 attempt")
+                            && output.contains(
+                                "elapsed time limit of 1 second prevented further retries"
+                            )
+                            && !output.contains("Verification attempt"),
+                        "verify should let a running attempt finish, then stop retrying:\n{}",
+                        output
+                    );
+                },
+            );
+        }
+    }
+
+    #[test]
+    fn verify_no_log_hides_command_and_failure_detail() {
+        setup();
+        for inventory in ["tests/servers/local.yml", "tests/servers/remote.yml"] {
+            run_test_check(
+                "test-ymls/verify/verify-no-log-error.yml",
+                true,
+                &[],
+                inventory,
+                |output| {
+                    assert!(output.contains("details hidden by no_log"));
+                    assert!(
+                        !output.contains("VERIFY_SUPER_SECRET"),
+                        "no_log should hide verify command and output:\n{}",
+                        output
+                    );
+                },
+            );
+        }
+    }
+
+    #[test]
+    fn verify_honors_become_environment_and_login_shell() {
+        setup();
+        run_test_check(
+            "test-ymls/verify/verify-context.yml",
+            false,
+            &["become_password="],
+            "tests/servers/become-nopass.yml",
+            |output| {
+                assert!(
+                    output.contains("Preserve environment through privilege escalation")
+                        && output.contains("Run through an interactive login shell"),
+                    "verify should succeed with become, environment, and login_shell:\n{}",
+                    output
+                );
+            },
+        );
+    }
+
+    #[test]
+    fn verify_removes_password_authenticated_doas_prompt() {
+        setup();
+        run_test_check(
+            "test-ymls/verify/verify-doas-with-password.yml",
+            false,
+            &["become_password=password"],
+            "tests/servers/become-doas-withpass.yml",
+            |output| {
+                assert!(
+                    output.contains("Registering output to: verify_doas")
+                        && output.contains("  root"),
+                    "verify should match and register clean doas output:\n{}",
+                    output
+                );
+                assert!(
+                    !output.contains("password:"),
+                    "verify should not register the doas prompt:\n{}",
+                    output
+                );
+            },
+        );
+    }
+}
+
 mod vars {
     use super::*;
 

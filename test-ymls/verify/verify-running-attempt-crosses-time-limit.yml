@@ -1,0 +1,11 @@
+- name: Verify a running attempt may cross the elapsed time limit
+  hosts: test
+  tasks:
+    - name: Stop after the running attempt crosses the elapsed time limit
+      verify:
+        command: sleep 2; printf starting
+        expect:
+          equals: healthy
+        retry:
+          attempts: 5
+          max_elapsed_seconds: 1

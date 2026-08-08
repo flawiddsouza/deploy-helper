@@ -1,0 +1,18 @@
+- name: Verify inherited execution context
+  hosts: test
+  tasks:
+    - name: Preserve environment through privilege escalation
+      become: true
+      environment:
+        VERIFY_CONTEXT: inherited
+      verify:
+        command: printf '%s:%s' "$(whoami)" "$VERIFY_CONTEXT"
+        expect:
+          equals: root:inherited
+
+    - name: Run through an interactive login shell
+      login_shell: true
+      verify:
+        command: case "$-" in *i*) printf 'interactive' ;; *) printf 'noninteractive' ;; esac
+        expect:
+          equals: interactive

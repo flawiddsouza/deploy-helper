@@ -1,0 +1,6 @@
+- name: Report a verification command failure
+  hosts: test
+  tasks:
+    - name: Check a failing command
+      verify:
+        command: printf 'not-ready' >&2; exit 7
