@@ -1,0 +1,52 @@
+- name: Build an environment file from overlays
+  hosts: test
+  vars:
+    app_ref: abc123
+  tasks:
+    - name: Create the fixture directory
+      file:
+        path: /tmp/deploy-helper-test-env-file
+        state: directory
+        mode: "0700"
+
+    - name: Write defaults
+      copy:
+        content: |
+          # application defaults
+          NODE_ENV=production
+          APP_REF=old
+          SECRET_TOKEN=
+          SMTP_HOST=
+        dest: /tmp/deploy-helper-test-env-file/.env.defaults
+
+    - name: Write fake encrypted secrets
+      copy:
+        content: |
+          TEST_ENCRYPTED:SECRET_TOKEN=secret-value
+          TEST_ENCRYPTED:SMTP_HOST=smtp.example.com
+        dest: /tmp/deploy-helper-test-env-file/secrets.enc.env
+        mode: "0600"
+
+    - name: Materialize the environment
+      chdir: /tmp/deploy-helper-test-env-file
+      env_file:
+        defaults: .env.defaults
+        values:
+          APP_REF: "{{ app_ref }}"
+        secrets:
+          provider: sops
+          src: secrets.enc.env
+        dest: .env
+        mode: "0600"
+
+    - name: Verify the merged environment
+      chdir: /tmp/deploy-helper-test-env-file
+      shell: |
+        stat -c 'PERMS=%a' .env
+        grep -qx 'NODE_ENV=production' .env
+        grep -qx 'APP_REF=abc123' .env
+        grep -qx 'SECRET_TOKEN=secret-value' .env
+        grep -qx 'SMTP_HOST=smtp.example.com' .env
+        test "$(grep -c '^SECRET_TOKEN=' .env)" -eq 1
+        ! find . -maxdepth 1 -name '.env.deploy-helper-*' | grep -q .
+        echo ENV_FILE_OK

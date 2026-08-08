@@ -1,0 +1,31 @@
+- name: Reject conflicting overlays
+  hosts: test
+  tasks:
+    - name: Create the fixture directory
+      file:
+        path: /tmp/deploy-helper-test-env-file-collision
+        state: directory
+
+    - name: Write defaults
+      copy:
+        content: |
+          SHARED=
+        dest: /tmp/deploy-helper-test-env-file-collision/.env.defaults
+
+    - name: Write fake encrypted secrets
+      copy:
+        content: |
+          TEST_ENCRYPTED:SHARED=from-secrets
+        dest: /tmp/deploy-helper-test-env-file-collision/secrets.enc.env
+
+    - name: Materialize conflicting overlays
+      chdir: /tmp/deploy-helper-test-env-file-collision
+      env_file:
+        defaults: .env.defaults
+        values:
+          SHARED: from-values
+        secrets:
+          provider: sops
+          src: secrets.enc.env
+        dest: .env
+        mode: "0600"

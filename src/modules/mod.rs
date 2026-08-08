@@ -1,6 +1,7 @@
 pub mod command;
 pub mod copy;
 pub mod debug;
+pub mod env_file;
 pub mod file;
 pub mod filter;
 pub mod include_tasks;

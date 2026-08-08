@@ -1,0 +1,36 @@
+- name: Preserve the destination when SOPS fails
+  hosts: test
+  tasks:
+    - name: Create the fixture directory
+      file:
+        path: /tmp/deploy-helper-test-env-file-sops-error
+        state: directory
+
+    - name: Write defaults
+      copy:
+        content: |
+          SECRET_TOKEN=
+        dest: /tmp/deploy-helper-test-env-file-sops-error/.env.defaults
+
+    - name: Write the existing destination
+      copy:
+        content: |
+          EXISTING=preserved
+        dest: /tmp/deploy-helper-test-env-file-sops-error/.env
+        mode: "0600"
+
+    - name: Write a failing SOPS fixture
+      copy:
+        content: |
+          TEST_SOPS_FAIL
+        dest: /tmp/deploy-helper-test-env-file-sops-error/secrets.enc.env
+
+    - name: Materialize with failing decryption
+      chdir: /tmp/deploy-helper-test-env-file-sops-error
+      env_file:
+        defaults: .env.defaults
+        secrets:
+          provider: sops
+          src: secrets.enc.env
+        dest: .env
+        mode: "0600"

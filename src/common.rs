@@ -18,32 +18,39 @@ fn de_mode<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
-    struct ModeVisitor;
+    deserializer.deserialize_any(ModeVisitor).map(Some)
+}
 
-    impl serde::de::Visitor<'_> for ModeVisitor {
-        type Value = String;
+fn de_required_mode<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    deserializer.deserialize_any(ModeVisitor)
+}
 
-        fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-            f.write_str("a quoted octal string like \"0600\"")
-        }
+struct ModeVisitor;
 
-        fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<String, E> {
-            Ok(v.to_string())
-        }
+impl serde::de::Visitor<'_> for ModeVisitor {
+    type Value = String;
 
-        fn visit_u64<E: serde::de::Error>(self, v: u64) -> Result<String, E> {
-            Err(E::custom(format!(
-                "mode must be a quoted string like \"0600\" (unquoted it is read as the YAML number {}, which loses the octal meaning)",
-                v
-            )))
-        }
-
-        fn visit_i64<E: serde::de::Error>(self, v: i64) -> Result<String, E> {
-            self.visit_u64(v.max(0) as u64)
-        }
+    fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        f.write_str("a quoted octal string like \"0600\"")
     }
 
-    deserializer.deserialize_any(ModeVisitor).map(Some)
+    fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<String, E> {
+        Ok(v.to_string())
+    }
+
+    fn visit_u64<E: serde::de::Error>(self, v: u64) -> Result<String, E> {
+        Err(E::custom(format!(
+            "mode must be a quoted string like \"0600\" (unquoted it is read as the YAML number {}, which loses the octal meaning)",
+            v
+        )))
+    }
+
+    fn visit_i64<E: serde::de::Error>(self, v: i64) -> Result<String, E> {
+        self.visit_u64(v.max(0) as u64)
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -70,6 +77,7 @@ pub struct Task {
     pub template: Option<TemplateSpec>,
     pub copy: Option<CopySpec>,
     pub file: Option<FileSpec>,
+    pub env_file: Option<EnvFileSpec>,
     pub tags: Option<Vec<String>>,
 }
 
@@ -101,6 +109,31 @@ pub struct FileSpec {
     pub mode: Option<String>,
     pub owner: Option<String>,
     pub group: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EnvFileSpec {
+    pub defaults: String,
+    #[serde(default)]
+    pub values: IndexMap<String, String>,
+    pub secrets: Option<EnvFileSecretsSpec>,
+    pub dest: String,
+    #[serde(deserialize_with = "de_required_mode")]
+    pub mode: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EnvFileSecretsSpec {
+    pub provider: EnvFileSecretsProvider,
+    pub src: String,
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum EnvFileSecretsProvider {
+    Sops,
 }
 
 #[cfg(test)]
@@ -209,5 +242,24 @@ mod tests {
         assert_eq!(spec.mode, Some("0700".to_string()));
         assert_eq!(spec.owner, Some("app".to_string()));
         assert_eq!(spec.group, Some("app".to_string()));
+    }
+
+    #[test]
+    fn env_file_spec_parses_sops_overlay() {
+        let yaml = "defaults: .env.defaults\nvalues:\n  APP_REF: '{{ app_ref }}'\nsecrets:\n  provider: sops\n  src: secrets.enc.env\ndest: .env\nmode: \"0600\"\n";
+        let spec: EnvFileSpec = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(spec.values.get("APP_REF").unwrap(), "{{ app_ref }}");
+        assert_eq!(
+            spec.secrets.as_ref().unwrap().provider,
+            EnvFileSecretsProvider::Sops
+        );
+        assert_eq!(spec.mode, "0600");
+    }
+
+    #[test]
+    fn env_file_rejects_unknown_secret_provider() {
+        let yaml = "defaults: .env.defaults\nsecrets:\n  provider: vault\n  src: secrets.env\ndest: .env\nmode: \"0600\"\n";
+        let err = serde_yaml::from_str::<EnvFileSpec>(yaml).unwrap_err();
+        assert!(err.to_string().contains("unknown variant `vault`"));
     }
 }

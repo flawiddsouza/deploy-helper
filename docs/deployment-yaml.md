@@ -55,7 +55,7 @@ Deployment fields:
 - `hosts:` - comma-separated list of host names from the inventory. The deployment runs against each host in turn.
 - `tasks:` - list of tasks (see below).
 - `vars:` - vars set before the deployment's tasks run.
-- `chdir:` - default working directory for `shell:` and `command:` tasks. Tasks may override.
+- `chdir:` - default working directory for `shell:`, `command:`, and `env_file:` tasks. Tasks may override.
 - `login_shell:` - if true, `shell:` and `command:` run through a login shell (`$SHELL -l -i`) so `.bashrc`/`.zshrc` is loaded. Tasks may override.
 - `shell_defaults:` - a line injected ahead of every `shell:` block, e.g. `set -u` or `set -euo pipefail`, so strict mode needn't be repeated per block. Runs but is not echoed, like the built-in `set -e`. Tasks may override; an empty string opts a task out.
 - `environment:` - map of environment variables exported for every `shell:` and `command:` task. Values are rendered through MiniJinja; keys must be plain identifiers. Never echoed, so secret values stay out of the output, and the exports ride inside the `become` wrapper so sudo/doas/su env resets don't strip them. Task-level entries merge over the deployment map per key.
@@ -67,7 +67,7 @@ Deployment fields:
 
 Unknown keys are rejected everywhere - deployments, tasks, action specs, and inventory hosts - so a typo like `dst:` for `dest:` is a parse error naming the bad key instead of silently doing nothing.
 
-Each task has a `name:` and one action key (`shell:`, `command:`, `template:`, `copy:`, `file:`, `debug:`, or `include_tasks:`). `debug:` is the one action that may be paired with another action on the same task; it runs first. Modifiers (`register:`, `when:`, `loop:`, `vars:`, `chdir:`, `login_shell:`, `become:`, `become_method:`, `tags:`) may be added to any task.
+Each task has a `name:` and one action key (`shell:`, `command:`, `template:`, `copy:`, `file:`, `env_file:`, `debug:`, or `include_tasks:`). `debug:` is the one action that may be paired with another action on the same task; it runs first. Modifiers (`register:`, `when:`, `loop:`, `vars:`, `chdir:`, `login_shell:`, `become:`, `become_method:`, `tags:`) may be added to any task.
 
 ### `shell:`
 
@@ -170,6 +170,42 @@ Creates a directory (with parents, like `mkdir -p`) and applies permissions and 
 
 `state: directory` is required (no other states are supported yet). `mode:`, `owner:`, and `group:` are optional and apply to the final path component only; parents created along the way get default permissions. The task succeeds without changes if the directory already exists.
 
+### `env_file:`
+
+Builds one dotenv file from a defaults file, explicit values, and an optional
+encrypted secrets file:
+
+```yaml
+- name: Materialize the application environment
+  chdir: /opt/app
+  env_file:
+    defaults: .env.defaults
+    values:
+      APP_REF: "{{ app_ref }}"
+    secrets:
+      provider: sops
+      src: secrets.enc.env
+    dest: .env
+    mode: "0600"
+```
+
+Paths are on the target and are relative to the effective `chdir:`. The
+defaults file supplies the baseline. `values:` and decrypted secrets replace
+matching defaults and add missing keys. They are peer overlays: defining a key
+in both `values:` and secrets fails instead of choosing one silently.
+`values:` are emitted as unquoted `KEY=value` entries and must use plain ASCII
+scalars. Spaces, quotes, `#`, `$`, shell operators, and control characters are
+rejected. Put complex values in the defaults or SOPS file so their original
+dotenv quoting is preserved.
+
+`provider: sops` runs `sops -d` on the target and redirects its output directly
+into a restrictive temporary file. Decrypted content is never returned or
+logged. When configured, decrypted secrets must contain at least one dotenv
+entry. The final dotenv file contains each key once, uses LF line endings, and
+is chmod-ed before an atomic move to `dest:`. A failure removes temporary files
+and leaves an existing destination unchanged. `mode:` is required and follows
+the same quoting and octal validation rules as `copy:` and `template:`.
+
 ### `debug:`
 
 Prints values from the current vars map. Useful for inspecting state mid-deployment.
@@ -195,10 +231,10 @@ The path is resolved relative to the deploy file's directory. Included tasks see
 
 These can be set on any task:
 
-- `register: <name>` - capture the action's result (`stdout`, `stderr`, `rc`) into a var. For `template:`, `copy:`, and `file:` the captured value is empty (`{stdout: "", stderr: "", rc: 0}`) since there is no command output.
-- `no_log: true` - suppress this task's command echo and output (and `debug:` output) so secrets aren't printed. `copy:`/`template:`/`file:` are unaffected since they never print their content. The `Executing task:` line still shows.
+- `register: <name>` - capture the action's result (`stdout`, `stderr`, `rc`) into a var. For `template:`, `copy:`, `file:`, and `env_file:` the captured value is empty (`{stdout: "", stderr: "", rc: 0}`) since there is no command output.
+- `no_log: true` - suppress this task's command echo and output (and `debug:` output) so secrets aren't printed. `copy:`/`template:`/`file:`/`env_file:` are unaffected since they never print their content. The `Executing task:` line still shows.
 - `vars:` - set vars before the action runs. Available for substitution in the same task.
-- `chdir: <path>` - working directory for `shell:` and `command:`. Falls back to the deployment-level `chdir:`.
+- `chdir: <path>` - working directory for `shell:`, `command:`, and `env_file:`. Falls back to the deployment-level `chdir:`.
 - `when: <expr>` - skip the task unless the expression evaluates true.
 - `creates: <path>` - skip the task if `<path>` already exists on the target (checked with `test -e`). Idempotency guard for `shell:`/`command:`.
 - `removes: <path>` - skip the task if `<path>` does not exist on the target. Idempotency guard for `shell:`/`command:`.

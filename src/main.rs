@@ -316,6 +316,21 @@ fn process_tasks(
                 )?;
             }
 
+            if let Some(spec) = &task.env_file {
+                modules::env_file::process(
+                    &task_name,
+                    spec,
+                    ctx.is_localhost,
+                    ctx.session,
+                    task_chdir.as_deref(),
+                    ctx.vars_map,
+                    task_become,
+                    &task_become_method,
+                    task_become_password,
+                    task.register.as_ref(),
+                )?;
+            }
+
             if let Some(include_file) = &task.include_tasks {
                 println!(
                     "{}",

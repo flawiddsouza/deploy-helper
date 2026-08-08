@@ -1101,6 +1101,128 @@ mod file_ops {
             },
         );
     }
+
+    #[test]
+    fn env_file_merges_values_and_sops_secrets() {
+        setup();
+        run_test_check(
+            "test-ymls/file-ops/env-file.yml",
+            false,
+            &[],
+            "tests/servers/remote-ssh.yml",
+            |output| {
+                assert!(
+                    output.contains("PERMS=600") && output.contains("ENV_FILE_OK"),
+                    "env_file should merge overlays and install mode 600:\n{}",
+                    output
+                );
+            },
+        );
+    }
+
+    #[test]
+    fn env_file_rejects_values_secrets_collision() {
+        setup();
+        run_test_check(
+            "test-ymls/file-ops/env-file-collision-error.yml",
+            true,
+            &[],
+            "tests/servers/remote-ssh.yml",
+            |output| {
+                assert!(
+                    output.contains("key is defined in both values and secrets: SHARED"),
+                    "env_file should name the conflicting key:\n{}",
+                    output
+                );
+            },
+        );
+    }
+
+    #[test]
+    fn env_file_sops_failure_preserves_destination_and_cleans_temps() {
+        setup();
+        run_test_check(
+            "test-ymls/file-ops/env-file-sops-error.yml",
+            true,
+            &[],
+            "tests/servers/remote-ssh.yml",
+            |output| {
+                assert!(
+                    output.contains("sops decryption failed: secrets.enc.env"),
+                    "env_file should report the failed source without its content:\n{}",
+                    output
+                );
+            },
+        );
+
+        let verification = Command::new("docker")
+            .args([
+                "exec",
+                "ssh_test_server",
+                "sh",
+                "-c",
+                "cd /tmp/deploy-helper-test-env-file-sops-error && grep -qx 'EXISTING=preserved' .env && ! find . -maxdepth 1 -name '.env.deploy-helper-*' | grep -q .",
+            ])
+            .output()
+            .expect("Failed to verify the SOPS failure state");
+        assert!(
+            verification.status.success(),
+            "SOPS failure should preserve .env and remove temporary files: {}",
+            String::from_utf8_lossy(&verification.stderr)
+        );
+    }
+
+    #[test]
+    fn env_file_rejects_empty_sops_output() {
+        setup();
+        run_test_check(
+            "test-ymls/file-ops/env-file-empty-sops.yml",
+            true,
+            &[],
+            "tests/servers/remote-ssh.yml",
+            |output| {
+                assert!(
+                    output.contains("decrypted secrets contain no dotenv entries"),
+                    "env_file should reject empty decrypted secrets:\n{}",
+                    output
+                );
+            },
+        );
+
+        let verification = Command::new("docker")
+            .args([
+                "exec",
+                "ssh_test_server",
+                "sh",
+                "-c",
+                "cd /tmp/deploy-helper-test-env-file-empty-sops && grep -qx 'EXISTING=preserved' .env && ! find . -maxdepth 1 -name '.env.deploy-helper-*' | grep -q .",
+            ])
+            .output()
+            .expect("Failed to verify the empty SOPS state");
+        assert!(
+            verification.status.success(),
+            "Empty SOPS output should preserve .env and remove temporary files: {}",
+            String::from_utf8_lossy(&verification.stderr)
+        );
+    }
+
+    #[test]
+    fn env_file_without_secrets_replaces_defaults() {
+        setup();
+        run_test_check(
+            "test-ymls/file-ops/env-file-no-secrets.yml",
+            false,
+            &[],
+            "tests/servers/remote-ssh.yml",
+            |output| {
+                assert!(
+                    output.contains("NO_SECRETS_PERMS=600"),
+                    "env_file should support a values-only overlay:\n{}",
+                    output
+                );
+            },
+        );
+    }
 }
 
 mod tags {
