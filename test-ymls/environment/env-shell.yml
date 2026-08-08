@@ -1,0 +1,14 @@
+- name: Environment in shell blocks
+  hosts: test
+  environment:
+    DH_ENV_PLAY: play-value
+    DH_ENV_SHARED: from-play
+  tasks:
+    - name: Play-level environment is visible
+      shell: echo "play=$DH_ENV_PLAY shared=$DH_ENV_SHARED"
+
+    - name: Task-level entries merge over the play map
+      environment:
+        DH_ENV_SHARED: from-task
+        DH_ENV_TASK: task-value
+      shell: echo "play=$DH_ENV_PLAY shared=$DH_ENV_SHARED task=$DH_ENV_TASK"

@@ -16,13 +16,26 @@ fn handle_command_execution(
     register: Option<&String>,
     login_shell: bool,
     vars_map: &mut IndexMap<String, Value>,
+    env: Option<&IndexMap<String, String>>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let result = if is_localhost {
-        utils::execute_local_command(command, use_shell, display_output, chdir, login_shell)
+        utils::execute_local_command(command, use_shell, display_output, chdir, login_shell, env)
     } else {
+        // Remote exec always goes through the login shell, so the environment
+        // travels as export lines ahead of the command. Braces keep the whole
+        // thing one compound command, so a chdir's `cd dir && ...` guard still
+        // covers the command and not just the first export.
+        let remote_cmd = match env {
+            Some(env) if !env.is_empty() => format!(
+                "{{ {}; {}; }}",
+                utils::env_export_lines(env).join("; "),
+                command
+            ),
+            _ => command.to_string(),
+        };
         utils::execute_ssh_command(
             session.unwrap(),
-            command,
+            &remote_cmd,
             use_shell,
             display_output,
             chdir,
@@ -145,6 +158,7 @@ pub fn process_shell_block(
     source: &str,
     display_segments: Vec<String>,
     shell_defaults: Option<&str>,
+    environment: Option<&IndexMap<String, String>>,
     is_localhost: bool,
     session: Option<&Session>,
     task_chdir: Option<&str>,
@@ -156,6 +170,22 @@ pub fn process_shell_block(
     become_password: Option<&str>,
     no_log: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    // shell_defaults (e.g. "set -euo pipefail") and environment: exports are
+    // injected ahead of the block like the built-in set -e: they run but are
+    // not echoed with the commands, so env values never reach the output.
+    // Built before the echo so a bad environment fails without echoing.
+    let defaults = shell_defaults
+        .map(|d| utils::replace_placeholders(d, vars_map))
+        .filter(|d| !d.trim().is_empty());
+    let mut prelude = vec!["set -e".to_string()];
+    if let Some(d) = defaults {
+        prelude.push(d);
+    }
+    if let Some(env) = environment {
+        let rendered = utils::render_env_values(env, vars_map)?;
+        prelude.extend(utils::env_export_lines(&rendered));
+    }
+
     if !no_log {
         for seg in &display_segments {
             let substituted = utils::replace_placeholders(seg, vars_map);
@@ -164,15 +194,7 @@ pub fn process_shell_block(
     }
 
     let substituted_source = utils::replace_placeholders(source, vars_map);
-    // shell_defaults (e.g. "set -euo pipefail") is injected ahead of the block
-    // like the built-in set -e: it runs but is not echoed with the commands.
-    let defaults = shell_defaults
-        .map(|d| utils::replace_placeholders(d, vars_map))
-        .filter(|d| !d.trim().is_empty());
-    let exec_source = match defaults {
-        Some(d) => format!("set -e\n{}\n{}", d, substituted_source),
-        None => format!("set -e\n{}", substituted_source),
-    };
+    let exec_source = format!("{}\n{}", prelude.join("\n"), substituted_source);
 
     let display_output = register.is_none() && !no_log;
 
@@ -206,6 +228,7 @@ pub fn process_shell_block(
         register,
         login_shell,
         vars_map,
+        None,
     )
 }
 
@@ -213,6 +236,7 @@ pub fn process_shell_block(
 // (no shell interpretation, so no state sharing between lines).
 pub fn process_command(
     commands: Vec<String>,
+    environment: Option<&IndexMap<String, String>>,
     is_localhost: bool,
     session: Option<&Session>,
     task_chdir: Option<&str>,
@@ -224,6 +248,11 @@ pub fn process_command(
     become_password: Option<&str>,
     no_log: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    let env_rendered = match environment {
+        Some(env) if !env.is_empty() => Some(utils::render_env_values(env, vars_map)?),
+        _ => None,
+    };
+
     for cmd in commands {
         let substituted_cmd = utils::replace_placeholders(&cmd, vars_map);
         if !no_log {
@@ -232,9 +261,20 @@ pub fn process_command(
 
         let display_output = register.is_none() && !no_log;
 
+        // become wraps the command in `sh -c`, and sudo/su/doas reset the
+        // caller's environment, so the exports must ride inside the wrapper.
+        let become_inner = match &env_rendered {
+            Some(env) if become_enabled => format!(
+                "{}; {}",
+                utils::env_export_lines(env).join("; "),
+                substituted_cmd
+            ),
+            _ => substituted_cmd.clone(),
+        };
+
         if become_enabled && become_method == "doas" && become_password.is_some() {
             handle_doas_pty_execution(
-                &substituted_cmd,
+                &become_inner,
                 is_localhost,
                 session,
                 task_chdir,
@@ -248,7 +288,7 @@ pub fn process_command(
         }
 
         let exec_cmd = if become_enabled {
-            utils::wrap_become_command(&substituted_cmd, become_method, become_password)
+            utils::wrap_become_command(&become_inner, become_method, become_password)
         } else {
             substituted_cmd
         };
@@ -263,6 +303,11 @@ pub fn process_command(
             register,
             login_shell,
             vars_map,
+            if become_enabled {
+                None
+            } else {
+                env_rendered.as_ref()
+            },
         )?;
     }
 

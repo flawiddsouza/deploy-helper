@@ -15,6 +15,39 @@ pub(crate) fn shell_escape(s: &str) -> String {
     format!("'{}'", s.replace('\'', "'\\''"))
 }
 
+// Renders an `environment:` map to final values. Values go through placeholder
+// substitution; keys must be plain identifiers so nothing can smuggle shell
+// syntax through a key when the map is turned into export lines.
+pub fn render_env_values(
+    env: &IndexMap<String, String>,
+    vars_map: &IndexMap<String, Value>,
+) -> Result<IndexMap<String, String>, String> {
+    let mut rendered = IndexMap::new();
+    for (key, value) in env {
+        let key_ok = !key.is_empty()
+            && !key.chars().next().unwrap().is_ascii_digit()
+            && key.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
+        if !key_ok {
+            return Err(format!(
+                "invalid environment key '{}': keys must be identifiers like B2_ACCOUNT_ID",
+                key
+            ));
+        }
+        rendered.insert(key.clone(), replace_placeholders(value, vars_map));
+    }
+    Ok(rendered)
+}
+
+// The same map as single-quote escaped `export KEY='value'` lines, for paths
+// where the environment has to travel inside the command text (shell blocks,
+// become wrappers, remote exec).
+pub fn env_export_lines(rendered: &IndexMap<String, String>) -> Vec<String> {
+    rendered
+        .iter()
+        .map(|(k, v)| format!("export {}={}", k, shell_escape(v)))
+        .collect()
+}
+
 // Permission modes are restricted to plain octal so they can be spliced into
 // shell commands without quoting concerns.
 pub fn validate_mode(mode: &str) -> Result<(), String> {
@@ -523,6 +556,7 @@ pub fn execute_local_command(
     display_output: bool,
     chdir: Option<&str>,
     login_shell: bool,
+    env: Option<&IndexMap<String, String>>,
 ) -> Result<(String, String, i32), Box<dyn std::error::Error>> {
     let mut cmd = if login_shell && !cfg!(windows) {
         let sh_arg = format!("exec \"$SHELL\" -l -i -c {}", shell_escape(command));
@@ -545,6 +579,10 @@ pub fn execute_local_command(
 
     if let Some(dir) = chdir {
         cmd.current_dir(dir);
+    }
+
+    if let Some(env) = env {
+        cmd.envs(env);
     }
 
     cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
@@ -597,7 +635,7 @@ pub fn path_exists_on_target(
 ) -> Result<bool, Box<dyn std::error::Error>> {
     let cmd = format!("test -e {}", shell_escape(path));
     let (_stdout, _stderr, exit_status) = if is_localhost {
-        execute_local_command(&cmd, true, false, None, false)?
+        execute_local_command(&cmd, true, false, None, false, None)?
     } else {
         let session = session.ok_or("path_exists_on_target: remote target requires session")?;
         execute_ssh_command(session, &cmd, true, false, None, false)?
@@ -772,7 +810,7 @@ pub fn run_shell_on_target(
         command.to_string()
     };
     if is_localhost {
-        execute_local_command(&cmd, true, false, None, false)
+        execute_local_command(&cmd, true, false, None, false, None)
     } else {
         let session = session.ok_or("run_shell_on_target: remote target requires session")?;
         execute_ssh_command(session, &cmd, true, false, None, false)
@@ -1133,6 +1171,46 @@ mod tests {
     #[test]
     fn test_shell_escape_with_special_chars() {
         assert_eq!(shell_escape("a && b | c"), "'a && b | c'");
+    }
+
+    // render_env_values / env_export_lines
+
+    fn env_map(pairs: &[(&str, &str)]) -> IndexMap<String, String> {
+        pairs
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect()
+    }
+
+    #[test]
+    fn test_render_env_values_substitutes_placeholders() {
+        let mut vars = IndexMap::new();
+        vars.insert("b2_key".to_string(), Value::String("s3cret".to_string()));
+        let env = env_map(&[("B2_APP_KEY", "{{ b2_key }}")]);
+        let rendered = render_env_values(&env, &vars).unwrap();
+        assert_eq!(rendered.get("B2_APP_KEY").unwrap(), "s3cret");
+    }
+
+    #[test]
+    fn test_render_env_values_rejects_non_identifier_keys() {
+        let vars = IndexMap::new();
+        for key in ["BAD KEY", "1LEADING", "SEMI;COLON", ""] {
+            let env = env_map(&[(key, "x")]);
+            assert!(
+                render_env_values(&env, &vars).is_err(),
+                "should reject key '{}'",
+                key
+            );
+        }
+    }
+
+    #[test]
+    fn test_env_export_lines_escape_values() {
+        let rendered = env_map(&[("KEY", "it's a && b")]);
+        assert_eq!(
+            env_export_lines(&rendered),
+            vec!["export KEY='it'\\''s a && b'"]
+        );
     }
 
     // validate_mode

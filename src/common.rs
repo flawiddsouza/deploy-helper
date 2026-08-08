@@ -64,6 +64,7 @@ pub struct Task {
     pub include_tasks: Option<String>,
     pub login_shell: Option<bool>,
     pub shell_defaults: Option<String>,
+    pub environment: Option<IndexMap<String, String>>,
     pub r#become: Option<bool>,
     pub become_method: Option<String>,
     pub template: Option<TemplateSpec>,

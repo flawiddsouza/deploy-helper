@@ -1,0 +1,7 @@
+- name: Environment inherited by included tasks
+  hosts: test
+  environment:
+    DH_ENV_INHERITED: include-value
+  tasks:
+    - name: Include tasks that must see the play environment
+      include_tasks: env-include-tasks.yml

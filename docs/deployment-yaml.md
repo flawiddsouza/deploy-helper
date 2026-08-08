@@ -58,6 +58,7 @@ Deployment fields:
 - `chdir:` - default working directory for `shell:` and `command:` tasks. Tasks may override.
 - `login_shell:` - if true, `shell:` and `command:` run through a login shell (`$SHELL -l -i`) so `.bashrc`/`.zshrc` is loaded. Tasks may override.
 - `shell_defaults:` - a line injected ahead of every `shell:` block, e.g. `set -u` or `set -euo pipefail`, so strict mode needn't be repeated per block. Runs but is not echoed, like the built-in `set -e`. Tasks may override; an empty string opts a task out.
+- `environment:` - map of environment variables exported for every `shell:` and `command:` task. Values are rendered through MiniJinja; keys must be plain identifiers. Never echoed, so secret values stay out of the output, and the exports ride inside the `become` wrapper so sudo/doas/su env resets don't strip them. Task-level entries merge over the deployment map per key.
 - `become:` - if true, every task runs with privilege escalation by default. Tasks may override.
 - `become_method:` - default elevation tool (`sudo`, `doas`, or `su`) for the deployment's tasks; applies where `become:` is in effect. Tasks may override.
 - `tags:` - tags merged into every task's effective tag set. See [cli.md#tags](cli.md#tags).
@@ -205,6 +206,7 @@ These can be set on any task:
 - `become: true` - run as root. `become_method:` selects the elevation tool (`sudo` default, `doas`, or `su`). Both fall back to the deployment-level `become:`/`become_method:`. See [cli.md#privilege-escalation-prompt](cli.md#privilege-escalation-prompt) for `become_password` handling.
 - `login_shell: true` - run `shell:` and `command:` through a login shell. Falls back to the deployment-level `login_shell:`.
 - `shell_defaults: <line>` - override the deployment-level `shell_defaults:` for this task's `shell:` block. An empty string (`shell_defaults: ""`) disables the deployment default. Set on an `include_tasks:` task, the override applies to the included tasks (like `chdir:` and `login_shell:`).
+- `environment:` - environment variables for this task's `shell:`/`command:`, merged over the deployment-level map (task entries win per key). Set on an `include_tasks:` task, the merged map applies to the included tasks.
 - `tags: [...]` - task-level tags; merged with deployment and `include_tasks` tags into the task's effective tag set. See [cli.md#tags](cli.md#tags).
 
 ## Vars and Templating

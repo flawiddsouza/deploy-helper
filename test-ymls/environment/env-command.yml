@@ -1,0 +1,7 @@
+- name: Environment in command tasks
+  hosts: test
+  tasks:
+    - name: Command sees the environment
+      environment:
+        DH_ENV_CMD: command-value
+      command: printenv DH_ENV_CMD

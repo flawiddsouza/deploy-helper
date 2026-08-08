@@ -1,0 +1,2 @@
+- name: Included block reads the inherited environment
+  shell: echo "inherited=$DH_ENV_INHERITED"

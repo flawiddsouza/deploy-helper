@@ -1296,6 +1296,141 @@ mod execution {
     }
 }
 
+// environment: at play and task level - exported for shell: blocks and
+// command: lines without appearing in any echoed output.
+mod environment {
+    use super::*;
+
+    #[test]
+    fn play_and_task_environment_merge() {
+        setup();
+        for inventory in ["tests/servers/local.yml", "tests/servers/remote.yml"] {
+            run_test_check("test-ymls/environment/env-shell.yml", false, &[], inventory, |output| {
+                assert!(
+                    output.contains("play=play-value shared=from-play"),
+                    "play-level environment should reach the first block:\n{}",
+                    output
+                );
+                assert!(
+                    output.contains("play=play-value shared=from-task task=task-value"),
+                    "task entries should merge over the play map:\n{}",
+                    output
+                );
+            });
+        }
+    }
+
+    #[test]
+    fn command_task_sees_environment() {
+        setup();
+        for inventory in ["tests/servers/local.yml", "tests/servers/remote.yml"] {
+            run_test_check("test-ymls/environment/env-command.yml", false, &[], inventory, |output| {
+                assert!(
+                    output.contains("command-value"),
+                    "command: should see the environment on {}:\n{}",
+                    inventory,
+                    output
+                );
+            });
+        }
+    }
+
+    #[test]
+    fn environment_values_are_templated() {
+        run_test_check(
+            "test-ymls/environment/env-templated.yml",
+            false,
+            &[],
+            "tests/servers/local.yml",
+            |output| {
+                assert!(
+                    output.contains("rendered=rendered-secret"),
+                    "environment values should render vars:\n{}",
+                    output
+                );
+            },
+        );
+    }
+
+    // sudo resets the caller's environment, so this proves the exports ride
+    // inside the become wrapper rather than on the outer process.
+    #[test]
+    fn environment_survives_become() {
+        setup();
+        run_test_check(
+            "test-ymls/environment/env-become.yml",
+            false,
+            &["become_password="],
+            "tests/servers/become-nopass.yml",
+            |output| {
+                assert!(
+                    output.contains("user=root env=root-value"),
+                    "become shell should see the environment:\n{}",
+                    output
+                );
+                assert!(
+                    output.contains("root-cmd-value"),
+                    "become command should see the environment:\n{}",
+                    output
+                );
+            },
+        );
+    }
+
+    #[test]
+    fn environment_inherited_by_included_tasks() {
+        run_test_check(
+            "test-ymls/environment/env-include.yml",
+            false,
+            &[],
+            "tests/servers/local.yml",
+            |output| {
+                assert!(
+                    output.contains("inherited=include-value"),
+                    "included block should see the play environment:\n{}",
+                    output
+                );
+            },
+        );
+    }
+
+    // The env export prefix on remote commands is grouped in braces - without
+    // that, `cd bad-dir && export ...; cmd` would run cmd despite the failed cd.
+    #[test]
+    fn environment_does_not_defeat_chdir_guard() {
+        setup();
+        run_test_check(
+            "test-ymls/environment/env-command-chdir-guard.yml",
+            true,
+            &[],
+            "tests/servers/remote.yml",
+            |_| {},
+        );
+    }
+
+    #[test]
+    fn environment_key_with_shell_syntax_is_an_error() {
+        run_test_check(
+            "test-ymls/environment/env-bad-key-error.yml",
+            true,
+            &[],
+            "tests/servers/local.yml",
+            |output| {
+                assert!(
+                    output.contains("invalid environment key"),
+                    "bad key should be rejected with a clear error:\n{}",
+                    output
+                );
+                assert!(
+                    !output.contains("never"),
+                    "nothing should run after the key validation fails:\n{}",
+                    output
+                );
+            },
+        );
+    }
+}
+
 // Unknown keys anywhere in a deploy file or inventory are parse errors, so a
 // typo like dst: for dest: can't silently do nothing. Localhost only.
 mod unknown_keys {

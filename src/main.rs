@@ -57,6 +57,7 @@ pub(crate) struct Deployment {
     pub(crate) chdir: Option<String>,
     pub(crate) login_shell: Option<bool>,
     pub(crate) shell_defaults: Option<String>,
+    pub(crate) environment: Option<IndexMap<String, String>>,
     pub(crate) r#become: Option<bool>,
     pub(crate) become_method: Option<String>,
     pub(crate) vars: Option<IndexMap<String, String>>,
@@ -81,6 +82,7 @@ fn process_tasks(
     dep_chdir: Option<&str>,
     dep_login_shell: bool,
     dep_shell_defaults: Option<&str>,
+    dep_environment: Option<&IndexMap<String, String>>,
     dep_become: Option<bool>,
     dep_become_method: Option<&str>,
     ancestor_tags: &[String],
@@ -173,6 +175,20 @@ fn process_tasks(
         // empty string opts a task out of the deployment default.
         let task_shell_defaults = task.shell_defaults.as_deref().or(dep_shell_defaults);
 
+        // environment: merges per key - the deployment map is the base and
+        // task-level entries win.
+        let task_environment: Option<IndexMap<String, String>> = {
+            let mut merged = dep_environment.cloned().unwrap_or_default();
+            if let Some(env) = &task.environment {
+                merged.extend(env.iter().map(|(k, v)| (k.clone(), v.clone())));
+            }
+            if merged.is_empty() {
+                None
+            } else {
+                Some(merged)
+            }
+        };
+
         let task_become = task.r#become.or(dep_become).unwrap_or(false);
         let task_become_method = task
             .become_method
@@ -224,6 +240,7 @@ fn process_tasks(
                     shell_command,
                     display_segments,
                     task_shell_defaults,
+                    task_environment.as_ref(),
                     ctx.is_localhost,
                     ctx.session,
                     task_chdir.as_deref(),
@@ -241,6 +258,7 @@ fn process_tasks(
                 let commands = utils::split_commands(command);
                 modules::command::process_command(
                     commands,
+                    task_environment.as_ref(),
                     ctx.is_localhost,
                     ctx.session,
                     task_chdir.as_deref(),
@@ -312,6 +330,7 @@ fn process_tasks(
                     task_chdir.as_deref(),
                     use_login_shell,
                     task_shell_defaults,
+                    task_environment.as_ref(),
                     dep_become,
                     dep_become_method,
                     &effective_tags,
@@ -562,6 +581,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     dep.chdir.as_deref(),
                     dep.login_shell.unwrap_or(false),
                     dep.shell_defaults.as_deref(),
+                    dep.environment.as_ref(),
                     dep.r#become,
                     dep.become_method.as_deref(),
                     &dep_ancestor_tags,

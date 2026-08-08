@@ -1,0 +1,9 @@
+- name: Environment values are templated
+  hosts: test
+  vars:
+    dh_env_secret: rendered-secret
+  environment:
+    DH_ENV_RENDERED: "{{ dh_env_secret }}"
+  tasks:
+    - name: Templated value reaches the shell
+      shell: echo "rendered=$DH_ENV_RENDERED"

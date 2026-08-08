@@ -1,0 +1,8 @@
+- name: Environment must not defeat the chdir guard
+  hosts: test
+  tasks:
+    - name: A failing cd still fails the command
+      chdir: /deploy-helper-test-no-such-dir
+      environment:
+        DH_ENV_GUARD: guard-value
+      command: printenv DH_ENV_GUARD

@@ -1,0 +1,14 @@
+- name: Environment survives privilege escalation
+  hosts: test
+  tasks:
+    - name: Root shell sees the environment
+      become: true
+      environment:
+        DH_ENV_ROOT: root-value
+      shell: echo "user=$(whoami) env=$DH_ENV_ROOT"
+
+    - name: Root command sees the environment
+      become: true
+      environment:
+        DH_ENV_ROOT_CMD: root-cmd-value
+      command: printenv DH_ENV_ROOT_CMD

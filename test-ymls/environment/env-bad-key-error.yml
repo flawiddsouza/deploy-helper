@@ -1,0 +1,7 @@
+- name: Environment key with shell syntax
+  hosts: test
+  tasks:
+    - name: Rejected before anything runs
+      environment:
+        "BAD KEY": value
+      shell: echo never
