@@ -36,7 +36,8 @@ pub fn run(
         let dep_name = utils::replace_placeholders(&dep.name, &working_vars);
         println!("Starting deployment: {}", dep_name);
         let ancestor = dep.tags.clone().unwrap_or_default();
-        let visible = collect_visible(
+        let recovery_ancestor = filter::merge_tags(&ancestor, Some(&["always".to_string()]));
+        let mut visible = collect_visible(
             &dep.tasks,
             &ancestor,
             config,
@@ -44,6 +45,34 @@ pub fn run(
             0,
             deploy_file_dir,
             &working_vars,
+        );
+        let on_failure_visible = collect_visible(
+            &dep.on_failure,
+            &recovery_ancestor,
+            config,
+            &mut state,
+            0,
+            deploy_file_dir,
+            &working_vars,
+        );
+        visible.extend(
+            on_failure_visible
+                .into_iter()
+                .map(|(depth, name, tags)| (depth, format!("[on_failure] {}", name), tags)),
+        );
+        let always_visible = collect_visible(
+            &dep.always,
+            &recovery_ancestor,
+            config,
+            &mut state,
+            0,
+            deploy_file_dir,
+            &working_vars,
+        );
+        visible.extend(
+            always_visible
+                .into_iter()
+                .map(|(depth, name, tags)| (depth, format!("[always] {}", name), tags)),
         );
         let width = visible
             .iter()

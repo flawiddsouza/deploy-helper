@@ -54,6 +54,8 @@ Deployment fields:
 - `name:` - shown in the run banner.
 - `hosts:` - comma-separated list of host names from the inventory. The deployment runs against each host in turn.
 - `tasks:` - list of tasks (see below).
+- `on_failure:` - optional flat task list run when a task in `tasks:` fails.
+- `always:` - optional flat task list run after `tasks:` and any triggered `on_failure:`, whether they succeeded or failed.
 - `vars:` - vars set before the deployment's tasks run.
 - `chdir:` - default working directory for `shell:`, `command:`, `verify:`, and `env_file:` tasks. Tasks may override.
 - `login_shell:` - if true, `shell:`, `command:`, and `verify:` run through a login shell (`$SHELL -l -i`) so `.bashrc`/`.zshrc` is loaded. Tasks may override.
@@ -62,6 +64,55 @@ Deployment fields:
 - `become:` - if true, every task runs with privilege escalation by default. Tasks may override.
 - `become_method:` - default elevation tool (`sudo`, `doas`, or `su`) for the deployment's tasks; applies where `become:` is in effect. Tasks may override.
 - `tags:` - tags merged into every task's effective tag set. See [cli.md#tags](cli.md#tags).
+
+## Recovery Tasks
+
+Use play-level `on_failure:` for rollback and `always:` for cleanup. These are flat
+task lists; nested recovery blocks are not supported.
+
+```yaml
+- name: Restore application data
+  hosts: prod_web
+  tasks:
+    - name: Promote the restore candidate
+      shell: |
+        mv /srv/app.next /srv/app
+        printf 'database_promoted=1\n'
+      register: promotion_output
+
+    - name: Verify the restored application
+      verify:
+        command: curl --fail --silent http://127.0.0.1/health
+
+  on_failure:
+    - name: Restore the previous database
+      when: promotion_output is defined
+      vars:
+        promotion: "{{ promotion_output.stdout | from_env }}"
+      environment:
+        DATABASE_PROMOTED: "{{ promotion.database_promoted }}"
+      shell: |
+        test "$DATABASE_PROMOTED" = 1
+        mv /srv/app.previous /srv/app
+
+  always:
+    - name: Remove the restore candidate
+      shell: rm -rf /srv/app.next
+```
+
+`on_failure:` runs only after a returned task error. A successful `on_failure:`
+section does not turn the deployment into a success; the original task error
+remains the final error. If `on_failure:` or `always:` tasks also fail, their
+errors are reported alongside the original error. `always:` runs even when
+`on_failure:` fails.
+
+Both sections inherit deployment vars, working directory, environment, shell
+defaults, privilege escalation, and tags. Registered output from completed main
+tasks remains available. Recovery tasks receive the special `always` tag, so a
+positive `--tags` filter cannot silently exclude rollback or cleanup. Pass
+`--skip-tags always` only when intentionally suppressing both sections.
+
+`--list-tasks` prefixes potential recovery tasks with `[on_failure]` and `[always]`.
 
 ## Task Structure
 

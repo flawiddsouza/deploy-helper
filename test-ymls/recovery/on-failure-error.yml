@@ -1,0 +1,20 @@
+- name: Failed on-failure task still runs cleanup
+  hosts: test
+  tasks:
+    - name: Fail the deployment
+      shell: exit 2
+
+  on_failure:
+    - name: Fail the rollback
+      shell: |
+        echo on_failure_started
+        exit 3
+
+    - name: On-failure task after error
+      shell: echo on_failure_after_error
+
+  always:
+    - name: Clean after failed rollback
+      shell: |
+        echo always_after_on_failure_error
+        exit 4

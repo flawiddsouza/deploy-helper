@@ -123,6 +123,10 @@ Starting deployment: First-time setup
 
 `include_tasks` files are read and their children are shown indented. Filtered-out includes are not read. Task names are right-padded to the length of the longest visible name in each deployment.
 
+Potential recovery tasks are included in their execution order. Their names are
+prefixed with `[on_failure]` and `[always]`. See
+[Recovery Tasks](deployment-yaml.md#recovery-tasks) for their runtime behavior.
+
 ## Privilege escalation prompt
 
 Tasks with `become: true` elevate via `sudo` (default), `doas`, or `su`. If the chosen method needs a password:
@@ -142,7 +146,7 @@ Tasks with `become: true` elevate via `sudo` (default), `doas`, or `su`. If the 
 ## Exit status
 
 - `0` on success.
-- Non-zero if any task fails, the YAML cannot be parsed, or an inventory host is missing. The failing task halts the deployment; subsequent deployments in the same file are not attempted.
+- Non-zero if any task fails, the YAML cannot be parsed, or an inventory host is missing. A failed normal task stops the remaining normal tasks, then runs `on_failure:` and `always:` as configured. Recovery does not clear the failure, and subsequent deployments in the same file are not attempted.
 
 ## Examples
 

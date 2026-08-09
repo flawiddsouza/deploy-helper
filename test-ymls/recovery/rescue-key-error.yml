@@ -1,0 +1,9 @@
+- name: Reject the Ansible recovery name
+  hosts: test
+  tasks:
+    - name: Never runs
+      command: true
+
+  rescue:
+    - name: Never runs either
+      command: true

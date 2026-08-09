@@ -1,0 +1,13 @@
+- name: Failed cleanup fails a successful deployment
+  hosts: test
+  tasks:
+    - name: Complete the deployment
+      shell: echo main_succeeded
+
+  on_failure:
+    - name: On-failure task should not run
+      shell: echo on_failure_should_not_run
+
+  always:
+    - name: Fail cleanup
+      shell: exit 4

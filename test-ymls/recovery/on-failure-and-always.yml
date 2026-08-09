@@ -1,0 +1,43 @@
+- name: On failure and always
+  hosts: test
+  chdir: /tmp
+  shell_defaults: set -eu
+  environment:
+    PLAY_VALUE: inherited
+  tasks:
+    - name: Record promotion progress
+      tags: [restore]
+      shell: printf 'database_promoted=1\n'
+      register: progress_output
+
+    - name: Parse promotion progress
+      tags: [restore]
+      vars:
+        progress: "{{ progress_output.stdout | from_env }}"
+      shell: test "{{ progress.database_promoted }}" = 1
+
+    - name: Fail the deployment
+      tags: [restore]
+      shell: exit 7
+
+    - name: Main task after failure
+      tags: [restore]
+      shell: echo main_after_failure
+
+  on_failure:
+    - name: Roll back the promoted database
+      when: progress_output is defined
+      environment:
+        DATABASE_PROMOTED: "{{ progress.database_promoted }}"
+      shell: |
+        test "$PWD" = /tmp
+        test "$PLAY_VALUE" = inherited
+        test "$DATABASE_PROMOTED" = 1
+        echo on_failure_ran
+
+  always:
+    - name: Clean temporary restore data
+      shell: |
+        test "$PWD" = /tmp
+        test "$PLAY_VALUE" = inherited
+        echo always_ran

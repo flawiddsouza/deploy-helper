@@ -63,6 +63,10 @@ pub(crate) struct Deployment {
     pub(crate) vars: Option<IndexMap<String, String>>,
     pub(crate) tags: Option<Vec<String>>,
     pub(crate) tasks: Vec<common::Task>,
+    #[serde(default)]
+    pub(crate) on_failure: Vec<common::Task>,
+    #[serde(default)]
+    pub(crate) always: Vec<common::Task>,
 }
 
 struct RunContext<'a> {
@@ -391,6 +395,75 @@ fn process_tasks(
     Ok(())
 }
 
+fn finish_task_sections(
+    main_error: Option<Box<dyn std::error::Error>>,
+    on_failure_error: Option<Box<dyn std::error::Error>>,
+    always_error: Option<Box<dyn std::error::Error>>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let error_count = usize::from(main_error.is_some())
+        + usize::from(on_failure_error.is_some())
+        + usize::from(always_error.is_some());
+
+    if error_count == 0 {
+        return Ok(());
+    }
+    if error_count == 1 {
+        return Err(main_error.or(on_failure_error).or(always_error).unwrap());
+    }
+
+    let mut messages = Vec::new();
+    if let Some(error) = main_error {
+        messages.push(format!("main tasks failed: {}", error));
+    }
+    if let Some(error) = on_failure_error {
+        messages.push(format!("on_failure tasks failed: {}", error));
+    }
+    if let Some(error) = always_error {
+        messages.push(format!("always tasks failed: {}", error));
+    }
+    Err(std::io::Error::other(messages.join("; ")).into())
+}
+
+fn process_deployment_task_sections(
+    ctx: &mut RunContext,
+    dep: &Deployment,
+    ancestor_tags: &[String],
+) -> Result<(), Box<dyn std::error::Error>> {
+    let dep_login_shell = dep.login_shell.unwrap_or(false);
+    let recovery_tags = filter::merge_tags(ancestor_tags, Some(&["always".to_string()]));
+    let run = |ctx: &mut RunContext, tasks: &[common::Task], section_tags: &[String]| {
+        process_tasks(
+            ctx,
+            tasks,
+            dep.chdir.as_deref(),
+            dep_login_shell,
+            dep.shell_defaults.as_deref(),
+            dep.environment.as_ref(),
+            dep.r#become,
+            dep.become_method.as_deref(),
+            section_tags,
+        )
+    };
+
+    let main_error = run(ctx, &dep.tasks, ancestor_tags).err();
+
+    let on_failure_error = if main_error.is_some() && !dep.on_failure.is_empty() {
+        println!("{}", "Running on_failure tasks:\n".yellow());
+        run(ctx, &dep.on_failure, &recovery_tags).err()
+    } else {
+        None
+    };
+
+    let always_error = if !dep.always.is_empty() {
+        println!("{}", "Running always tasks:\n".blue());
+        run(ctx, &dep.always, &recovery_tags).err()
+    } else {
+        None
+    };
+
+    finish_task_sections(main_error, on_failure_error, always_error)
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let matches = ClapCommand::new("deploy-helper")
         .version("1.0.3")
@@ -622,17 +695,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     filter_state: &mut filter_state,
                     step_state: &mut step_state,
                 };
-                process_tasks(
-                    &mut ctx,
-                    &dep.tasks,
-                    dep.chdir.as_deref(),
-                    dep.login_shell.unwrap_or(false),
-                    dep.shell_defaults.as_deref(),
-                    dep.environment.as_ref(),
-                    dep.r#become,
-                    dep.become_method.as_deref(),
-                    &dep_ancestor_tags,
-                )?;
+                process_deployment_task_sections(&mut ctx, &dep, &dep_ancestor_tags)?;
             } else {
                 eprintln!(
                     "{}",

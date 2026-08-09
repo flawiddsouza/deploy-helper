@@ -188,6 +188,26 @@ fn run_test_check<F>(
 ) where
     F: Fn(&str),
 {
+    run_test_check_with_flags(
+        yml_file,
+        should_fail,
+        extra_vars,
+        inventory_file,
+        &[],
+        check,
+    );
+}
+
+fn run_test_check_with_flags<F>(
+    yml_file: &str,
+    should_fail: bool,
+    extra_vars: &[&str],
+    inventory_file: &str,
+    extra_flags: &[&str],
+    check: F,
+) where
+    F: Fn(&str),
+{
     let mut args: Vec<String> = vec!["run".into(), "--quiet".into(), "--".into(), yml_file.into()];
     for ev in extra_vars {
         args.push("--extra-vars".into());
@@ -195,6 +215,9 @@ fn run_test_check<F>(
     }
     args.push("--inventory".into());
     args.push(inventory_file.into());
+    for flag in extra_flags {
+        args.push((*flag).into());
+    }
 
     let output = Command::new("cargo")
         .args(args.iter().map(|s| s.as_str()))
@@ -1762,6 +1785,129 @@ mod execution {
             "tests/servers/local.yml",
             &["--list-tasks"],
             None,
+        );
+    }
+}
+
+mod recovery {
+    use super::*;
+
+    #[test]
+    fn ansible_rescue_key_is_rejected() {
+        run_test_check(
+            "test-ymls/recovery/rescue-key-error.yml",
+            true,
+            &[],
+            "tests/servers/local.yml",
+            |output| {
+                assert!(
+                    output.contains("unknown field `rescue`"),
+                    "old rescue key should be rejected:\n{}",
+                    output
+                );
+            },
+        );
+    }
+
+    #[test]
+    fn list_tasks_marks_on_failure_and_always_tasks() {
+        run_test_check_with_flags(
+            "test-ymls/recovery/list-tasks.yml",
+            false,
+            &[],
+            "tests/servers/local.yml",
+            &["--list-tasks"],
+            |output| {
+                assert!(
+                    output.contains("[on_failure] Restore previous application  TAGS: [always]"),
+                    "{}",
+                    output
+                );
+                assert!(
+                    output.contains("[always] Remove temporary files            TAGS: [always]"),
+                    "{}",
+                    output
+                );
+            },
+        );
+    }
+
+    #[test]
+    fn on_failure_runs_after_failure_and_always_runs_after_it() {
+        setup();
+        run_test_check_with_flags(
+            "test-ymls/recovery/on-failure-and-always.yml",
+            true,
+            &[],
+            "tests/servers/remote-ssh.yml",
+            &["--tags", "restore"],
+            |output| {
+                assert!(output.contains("Running on_failure tasks:"), "{}", output);
+                assert!(output.contains("on_failure_ran"), "{}", output);
+                assert!(output.contains("Running always tasks:"), "{}", output);
+                assert!(output.contains("always_ran"), "{}", output);
+                assert!(!output.contains("main_after_failure"), "{}", output);
+                assert!(output.contains("exit status: 7"), "{}", output);
+            },
+        );
+    }
+
+    #[test]
+    fn on_failure_is_skipped_after_success_and_always_still_runs() {
+        setup();
+        run_test_check(
+            "test-ymls/recovery/success.yml",
+            false,
+            &[],
+            "tests/servers/remote-ssh.yml",
+            |output| {
+                assert!(output.contains("main_succeeded"), "{}", output);
+                assert!(!output.contains("Running on_failure tasks:"), "{}", output);
+                assert!(!output.contains("on_failure_should_not_run"), "{}", output);
+                assert!(output.contains("always_after_success"), "{}", output);
+            },
+        );
+    }
+
+    #[test]
+    fn on_failure_error_preserves_main_error_and_still_runs_always() {
+        setup();
+        run_test_check(
+            "test-ymls/recovery/on-failure-error.yml",
+            true,
+            &[],
+            "tests/servers/remote-ssh.yml",
+            |output| {
+                assert!(output.contains("on_failure_started"), "{}", output);
+                assert!(!output.contains("on_failure_after_error"), "{}", output);
+                assert!(
+                    output.contains("always_after_on_failure_error"),
+                    "{}",
+                    output
+                );
+                assert!(output.contains("main tasks failed:"), "{}", output);
+                assert!(output.contains("on_failure tasks failed:"), "{}", output);
+                assert!(output.contains("always tasks failed:"), "{}", output);
+                assert!(output.contains("exit status: 2"), "{}", output);
+                assert!(output.contains("exit status: 3"), "{}", output);
+                assert!(output.contains("exit status: 4"), "{}", output);
+            },
+        );
+    }
+
+    #[test]
+    fn always_failure_fails_an_otherwise_successful_deployment() {
+        setup();
+        run_test_check(
+            "test-ymls/recovery/always-failure.yml",
+            true,
+            &[],
+            "tests/servers/remote-ssh.yml",
+            |output| {
+                assert!(output.contains("main_succeeded"), "{}", output);
+                assert!(!output.contains("on_failure_should_not_run"), "{}", output);
+                assert!(output.contains("exit status: 4"), "{}", output);
+            },
         );
     }
 }

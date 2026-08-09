@@ -1,0 +1,13 @@
+- name: Recovery task listing
+  hosts: test
+  tasks:
+    - name: Deploy application
+      command: deploy
+
+  on_failure:
+    - name: Restore previous application
+      command: restore
+
+  always:
+    - name: Remove temporary files
+      command: cleanup
