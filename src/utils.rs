@@ -127,11 +127,16 @@ pub fn wrap_become_command(command: &str, method: &str, password: Option<&str>) 
     }
 }
 
-pub fn replace_placeholders(msg: &str, vars: &IndexMap<String, Value>) -> String {
+pub(crate) fn template_environment() -> Environment<'static> {
     let mut env = Environment::new();
     env.set_undefined_behavior(UndefinedBehavior::Strict);
     env.add_filter("from_json", from_json_filter);
     env.add_filter("from_env", from_env_filter);
+    env
+}
+
+pub fn replace_placeholders(msg: &str, vars: &IndexMap<String, Value>) -> String {
+    let env = template_environment();
     let template = env.template_from_str(msg).unwrap();
     let mut context = IndexMap::new();
 

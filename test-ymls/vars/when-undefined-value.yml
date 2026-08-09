@@ -1,0 +1,6 @@
+- name: Reject an undefined when value
+  hosts: test
+  tasks:
+    - name: Must not run
+      when: missing_value
+      command: echo unreachable

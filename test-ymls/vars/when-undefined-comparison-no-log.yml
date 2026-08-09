@@ -1,0 +1,7 @@
+- name: Hide an undefined when comparison
+  hosts: test
+  tasks:
+    - name: Must not run
+      no_log: true
+      when: missing_value != "secret-only-in-when"
+      command: echo unreachable

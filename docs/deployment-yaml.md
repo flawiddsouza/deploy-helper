@@ -349,10 +349,10 @@ The path is resolved relative to the deploy file's directory. Included tasks see
 These can be set on any task:
 
 - `register: <name>` - capture the action's result (`stdout`, `stderr`, `rc`) into a var. `verify:` captures the final successful attempt. For `template:`, `copy:`, `file:`, `env_file:`, and `systemd:` the captured value is empty (`{stdout: "", stderr: "", rc: 0}`) since there is no command output.
-- `no_log: true` - suppress this task's command echo and output (and `debug:` output) so secrets aren't printed. For `verify:`, it also hides failure details. `copy:`/`template:`/`file:`/`env_file:`/`systemd:` are unaffected since they never print their content. The `Executing task:` line still shows.
+- `no_log: true` - suppress this task's command echo and output (and `debug:` output) so secrets aren't printed. It also hides `when:` and `verify:` failure details. `copy:`/`template:`/`file:`/`env_file:`/`systemd:` are unaffected since they never print their content. The `Executing task:` line still shows.
 - `vars:` - set vars before the action runs. Available for substitution in the same task.
 - `chdir: <path>` - working directory for `shell:`, `command:`, `verify:`, and `env_file:`. Falls back to the deployment-level `chdir:`.
-- `when: <expr>` - skip the task unless the expression evaluates true.
+- `when: <expr>` - skip the task unless the expression evaluates true. An unguarded undefined value is an error, including as a bare condition or in a comparison. Guard optional values with `is defined` or supply a `default(...)` value.
 - `creates: <path>` - skip the task if `<path>` already exists on the target (checked with `test -e`). Idempotency guard for `shell:`/`command:`.
 - `removes: <path>` - skip the task if `<path>` does not exist on the target. Idempotency guard for `shell:`/`command:`.
 - `loop: [...]` - run the action once per item; the current item is exposed as `{{ item }}`. List items may be scalars or maps (access fields as `{{ item.field }}`).

@@ -689,6 +689,63 @@ mod vars {
     }
 
     #[test]
+    fn undefined_when_comparison_fails_closed() {
+        run_test_check(
+            "test-ymls/vars/when-undefined-comparison.yml",
+            true,
+            &[],
+            "tests/servers/local.yml",
+            |output| {
+                assert!(
+                    output.contains("when condition failed: undefined value")
+                        && output.contains("when: missing_value != \"\""),
+                    "undefined-value error should identify the condition:\n{output}"
+                );
+                assert!(!output.contains("Executing task: Must not run"));
+            },
+        );
+    }
+
+    #[test]
+    fn undefined_when_value_is_an_error() {
+        run_test_check(
+            "test-ymls/vars/when-undefined-value.yml",
+            true,
+            &[],
+            "tests/servers/local.yml",
+            |output| {
+                assert!(
+                    output.contains("when condition failed: undefined value")
+                        && output.contains("when: missing_value"),
+                    "undefined-value error should identify the condition:\n{output}"
+                );
+                assert!(!output.contains("Executing task: Must not run"));
+            },
+        );
+    }
+
+    #[test]
+    fn undefined_when_comparison_honors_no_log() {
+        run_test_check(
+            "test-ymls/vars/when-undefined-comparison-no-log.yml",
+            true,
+            &[],
+            "tests/servers/local.yml",
+            |output| {
+                assert!(
+                    output.contains("when condition failed (details hidden by no_log)"),
+                    "undefined-value error should be hidden:\n{output}"
+                );
+                assert!(
+                    !output.contains("secret-only-in-when"),
+                    "no_log should hide the condition:\n{output}"
+                );
+                assert!(!output.contains("Executing task: Must not run"));
+            },
+        );
+    }
+
+    #[test]
     fn run_level_vars() {
         setup();
         run_tests_for_both_inventories("test-ymls/vars/run-level-vars.yml", false, &[]);

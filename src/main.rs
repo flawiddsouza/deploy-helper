@@ -94,6 +94,7 @@ fn process_tasks(
     ancestor_tags: &[String],
 ) -> Result<(), Box<dyn std::error::Error>> {
     for task in tasks {
+        let no_log = task.no_log.unwrap_or(false);
         let task_name = utils::replace_placeholders(&task.name, ctx.vars_map);
 
         let effective_tags = filter::merge_tags(ancestor_tags, task.tags.as_deref());
@@ -108,7 +109,7 @@ fn process_tasks(
             filter::Decision::Skip(_) => continue,
         }
 
-        if !modules::when::process(&task.when, ctx.vars_map) {
+        if !modules::when::process(&task.when, ctx.vars_map, no_log)? {
             println!("{}", format!("Skipping task: {}\n", task_name).yellow());
             continue;
         }
@@ -176,7 +177,6 @@ fn process_tasks(
         }
 
         let use_login_shell = task.login_shell.unwrap_or(dep_login_shell);
-        let no_log = task.no_log.unwrap_or(false);
         // Task-level shell_defaults wins over the deployment's; an explicit
         // empty string opts a task out of the deployment default.
         let task_shell_defaults = task.shell_defaults.as_deref().or(dep_shell_defaults);
