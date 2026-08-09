@@ -1,0 +1,8 @@
+- name: "{{ deployment_name }}"
+  hosts: test
+  vars_files:
+    - provider: sops
+      src: secrets.enc.yml
+  tasks:
+    - name: "{{ missing_name }}"
+      command: echo unreachable

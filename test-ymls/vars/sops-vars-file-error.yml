@@ -1,0 +1,6 @@
+- name: SOPS error
+  hosts: test
+  vars_files:
+    - provider: sops
+      src: secrets-fail.enc.yml
+  tasks: []

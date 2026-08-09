@@ -56,6 +56,7 @@ Deployment fields:
 - `tasks:` - list of tasks (see below).
 - `on_failure:` - optional flat task list run when a task in `tasks:` fails.
 - `always:` - optional flat task list run after `tasks:` and any triggered `on_failure:`, whether they succeeded or failed.
+- `vars_files:` - encrypted variable files loaded on the control machine before `vars:`. See [Vars and Templating](#vars-and-templating).
 - `vars:` - vars set before the deployment's tasks run.
 - `chdir:` - default working directory for `shell:`, `command:`, `verify:`, and `env_file:` tasks. Tasks may override.
 - `login_shell:` - if true, `shell:`, `command:`, and `verify:` run through a login shell (`$SHELL -l -i`) so `.bashrc`/`.zshrc` is loaded. Tasks may override.
@@ -363,12 +364,38 @@ These can be set on any task:
 
 ## Vars and Templating
 
+Use `vars_files:` to declare encrypted variables required by a deployment:
+
+```yaml
+- name: Deploy application
+  hosts: prod_web
+  vars_files:
+    - provider: sops
+      src: secrets.enc.yml
+  tasks:
+    - name: Use the loaded secret
+      environment:
+        API_TOKEN: "{{ api_token }}"
+      command: ./deploy
+```
+
+`src:` is resolved relative to the deployment file. It may use variables that
+are already available before that file is loaded. `provider: sops` runs
+`sops -d` on the control machine with the version check disabled, keeps
+decrypted YAML in memory, and never prints its content. The decrypted document
+must be a non-empty YAML mapping. A missing
+SOPS executable, decryption error, empty result, invalid UTF-8, or invalid YAML
+stops the run and names the source file. Files are loaded in order, and later
+files replace matching keys from earlier files. `--list-tasks` loads the files
+too so names using their variables render correctly.
+
 Vars come from (later sources override earlier):
 
 1. `--extra-vars` / `-e` on the CLI (repeatable). See [cli.md#extra-vars](cli.md#extra-vars) for input forms.
-2. Deployment-level `vars:`.
-3. Task-level `vars:`.
-4. `register:` outputs from earlier tasks.
+2. Deployment-level `vars_files:` in declaration order.
+3. Deployment-level `vars:`.
+4. Task-level `vars:`.
+5. `register:` outputs from earlier tasks.
 
 `{{ var }}` placeholders are rendered through MiniJinja in: task `name:`, deployment `name:`, deployment `chdir:`, task `chdir:`, all action bodies, and inventory `host:`/`user:`/`password:`/`ssh_key_path:`.
 

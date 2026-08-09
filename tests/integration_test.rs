@@ -435,6 +435,119 @@ mod verify_tests {
 mod vars {
     use super::*;
 
+    #[cfg(unix)]
+    fn run_with_fake_sops(yml_file: &str, extra_flags: &[&str]) -> std::process::Output {
+        use std::os::unix::fs::PermissionsExt;
+
+        let fake_dir = std::path::Path::new("target").join(format!(
+            "deploy-helper-fake-sops-{}-{}",
+            std::process::id(),
+            std::thread::current()
+                .name()
+                .unwrap_or("vars")
+                .replace(':', "-")
+        ));
+        fs::create_dir_all(&fake_dir).unwrap();
+        let fake_sops = fake_dir.join("sops");
+        fs::write(
+            &fake_sops,
+            "#!/bin/sh\n[ \"$#\" -eq 2 ] && [ \"$1\" = -d ] || exit 64\n[ \"$SOPS_DISABLE_VERSION_CHECK\" = 1 ] || exit 65\nif grep -q '^TEST_SOPS_FAIL$' \"$2\"; then echo 'fixture decryption failed' >&2; exit 23; fi\nsed 's/^TEST_ENCRYPTED://' \"$2\"\n",
+        )
+        .unwrap();
+        fs::set_permissions(&fake_sops, fs::Permissions::from_mode(0o755)).unwrap();
+
+        let mut path = fake_dir.as_os_str().to_os_string();
+        path.push(":");
+        path.push(std::env::var_os("PATH").unwrap_or_default());
+
+        let mut command = Command::new("cargo");
+        command.args([
+            "run",
+            "--quiet",
+            "--",
+            yml_file,
+            "--inventory",
+            "tests/servers/local.yml",
+        ]);
+        command.args(extra_flags);
+        command.env("PATH", path);
+        let output = command.output().expect("Failed to run vars_files test");
+        fs::remove_dir_all(fake_dir).unwrap();
+        output
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn sops_vars_files_load_for_runs_and_task_listing() {
+        for flags in [Vec::new(), vec!["--list-tasks"]] {
+            let output = run_with_fake_sops("test-ymls/vars/sops-vars-file.yml", &flags);
+            assert!(
+                output.status.success(),
+                "vars_files run failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            assert!(
+                stdout.contains("Starting deployment: SOPS deployment"),
+                "deployment vars were not loaded:\n{}",
+                stdout
+            );
+            assert!(
+                stdout.contains("Use loaded-secret with play-value"),
+                "task vars were not rendered:\n{}",
+                stdout
+            );
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn sops_vars_files_report_provider_errors_without_decrypted_output() {
+        let output = run_with_fake_sops("test-ymls/vars/sops-vars-file-error.yml", &[]);
+        assert!(!output.status.success());
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(stderr.contains("sops decryption failed"));
+        assert!(stderr.contains("secrets-fail.enc.yml"));
+        assert!(stderr.contains("exit status 23"));
+        assert!(stderr.contains("fixture decryption failed"));
+        assert!(!stderr.contains("TEST_SOPS_FAIL"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn sops_vars_files_do_not_leak_values_in_template_errors() {
+        let output = run_with_fake_sops("test-ymls/vars/sops-vars-file-missing-var-error.yml", &[]);
+        assert!(!output.status.success());
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(stderr.contains("Available vars (values redacted):"));
+        for key in [
+            "deployment_name",
+            "secret_value",
+            "secret_group",
+            "credentials",
+            "username",
+            "password",
+            "tokens",
+        ] {
+            assert!(
+                stderr.contains(key),
+                "missing variable structure key: {key}"
+            );
+        }
+        assert!(stderr.contains("<redacted>"));
+        for value in [
+            "SOPS deployment",
+            "first-secret",
+            "from-sops",
+            "nested-user",
+            "nested-secret",
+            "first-token",
+            "second-token",
+        ] {
+            assert!(!stderr.contains(value), "secret value leaked: {value}");
+        }
+    }
+
     #[test]
     fn setting_and_debugging_vars() {
         setup();

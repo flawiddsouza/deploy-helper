@@ -140,6 +140,19 @@ pub enum EnvFileSecretsProvider {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
+pub struct VarsFileSpec {
+    pub provider: VarsFileProvider,
+    pub src: String,
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum VarsFileProvider {
+    Sops,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SystemdSpec {
     #[serde(default)]
     pub daemon_reload: bool,
@@ -316,6 +329,21 @@ mod tests {
     fn env_file_rejects_unknown_secret_provider() {
         let yaml = "defaults: .env.defaults\nsecrets:\n  provider: vault\n  src: secrets.env\ndest: .env\nmode: \"0600\"\n";
         let err = serde_yaml::from_str::<EnvFileSpec>(yaml).unwrap_err();
+        assert!(err.to_string().contains("unknown variant `vault`"));
+    }
+
+    #[test]
+    fn vars_file_spec_parses_sops_provider() {
+        let yaml = "provider: sops\nsrc: secrets.enc.yml\n";
+        let spec: VarsFileSpec = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(spec.provider, VarsFileProvider::Sops);
+        assert_eq!(spec.src, "secrets.enc.yml");
+    }
+
+    #[test]
+    fn vars_file_rejects_unknown_provider() {
+        let yaml = "provider: vault\nsrc: secrets.yml\n";
+        let err = serde_yaml::from_str::<VarsFileSpec>(yaml).unwrap_err();
         assert!(err.to_string().contains("unknown variant `vault`"));
     }
 

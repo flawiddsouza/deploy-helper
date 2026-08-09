@@ -1,0 +1,12 @@
+- name: "{{ deployment_name }}"
+  hosts: test
+  vars_files:
+    - provider: sops
+      src: secrets.enc.yml
+    - provider: sops
+      src: secrets-override.enc.yml
+  vars:
+    play_value: play-value
+  tasks:
+    - name: "Use {{ secret_value }} with {{ play_value }}"
+      command: echo success

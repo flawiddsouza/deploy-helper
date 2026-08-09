@@ -60,6 +60,8 @@ pub(crate) struct Deployment {
     pub(crate) environment: Option<IndexMap<String, String>>,
     pub(crate) r#become: Option<bool>,
     pub(crate) become_method: Option<String>,
+    #[serde(default)]
+    pub(crate) vars_files: Vec<common::VarsFileSpec>,
     pub(crate) vars: Option<IndexMap<String, String>>,
     pub(crate) tags: Option<Vec<String>>,
     pub(crate) tasks: Vec<common::Task>,
@@ -632,6 +634,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     for dep in deployments {
         step_state.reset_for_deployment();
+
+        modules::vars_file::load_all(&dep.vars_files, deploy_file_dir, &mut vars_map)?;
 
         if let Some(dep_vars) = &dep.vars {
             for (key, value) in dep_vars {

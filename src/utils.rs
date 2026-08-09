@@ -152,13 +152,42 @@ pub fn replace_placeholders(msg: &str, vars: &IndexMap<String, Value>) -> String
                 )
                 .red()
             );
-            eprintln!("{}", format!("Available vars: {:#?}", context).red());
+            eprintln!(
+                "{}",
+                format!(
+                    "Available vars (values redacted):\n{}",
+                    format_vars_structure_redacted(&context)
+                )
+                .red()
+            );
         } else {
             eprintln!("{}", format!("Error rendering template: {}", err).red());
         }
 
         exit(1);
     })
+}
+
+fn format_vars_structure_redacted(vars: &IndexMap<String, Value>) -> String {
+    fn redact_values(value: &Value) -> Value {
+        match value {
+            Value::Array(values) => Value::Array(values.iter().map(redact_values).collect()),
+            Value::Object(values) => Value::Object(
+                values
+                    .iter()
+                    .map(|(key, value)| (key.clone(), redact_values(value)))
+                    .collect(),
+            ),
+            _ => Value::String("<redacted>".to_string()),
+        }
+    }
+
+    let vars_redacted = Value::Object(
+        vars.iter()
+            .map(|(key, value)| (key.clone(), redact_values(value)))
+            .collect(),
+    );
+    serde_json::to_string_pretty(&vars_redacted).expect("JSON values should always serialize")
 }
 
 pub fn replace_placeholders_vars(msg: &str, vars: &IndexMap<String, Value>) -> Value {
@@ -1299,6 +1328,46 @@ pub fn write_dir_to_target(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_format_vars_structure_redacted_preserves_shape_without_values() {
+        let vars = IndexMap::from([
+            (
+                "service".to_string(),
+                serde_json::json!({
+                    "credentials": {
+                        "username": "operator",
+                        "password": "secret"
+                    },
+                    "ports": [8080, 8443],
+                    "enabled": true
+                }),
+            ),
+            ("region".to_string(), Value::String("eu-west".to_string())),
+        ]);
+
+        let vars_structure_redacted = format_vars_structure_redacted(&vars);
+        let vars_structure_redacted_parsed: Value =
+            serde_json::from_str(&vars_structure_redacted).unwrap();
+
+        assert_eq!(
+            vars_structure_redacted_parsed,
+            serde_json::json!({
+                "service": {
+                    "credentials": {
+                        "username": "<redacted>",
+                        "password": "<redacted>"
+                    },
+                    "ports": ["<redacted>", "<redacted>"],
+                    "enabled": "<redacted>"
+                },
+                "region": "<redacted>"
+            })
+        );
+        for value in ["operator", "secret", "8080", "8443", "true", "eu-west"] {
+            assert!(!vars_structure_redacted.contains(value));
+        }
+    }
 
     // shell_escape
 

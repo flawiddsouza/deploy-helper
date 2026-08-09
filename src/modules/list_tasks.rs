@@ -27,6 +27,7 @@ pub fn run(
     let mut state = GateState::new(config);
     let mut working_vars = vars_map.clone();
     for dep in deployments {
+        crate::modules::vars_file::load_all(&dep.vars_files, deploy_file_dir, &mut working_vars)?;
         if let Some(dep_vars) = &dep.vars {
             for (key, value) in dep_vars {
                 let evaluated = utils::replace_placeholders_vars(value, &working_vars);

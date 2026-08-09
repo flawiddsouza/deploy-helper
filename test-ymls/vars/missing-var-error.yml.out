@@ -7,6 +7,7 @@ test
 msg2:
 One or more of the variables are undefined in:
 "{{ my_var2 }}"
-Available vars: {
-    "my_var": String("test"),
+Available vars (values redacted):
+{
+  "my_var": "<redacted>"
 }
