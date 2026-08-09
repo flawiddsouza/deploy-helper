@@ -45,7 +45,7 @@ pub fn run(
             &mut state,
             0,
             deploy_file_dir,
-            &working_vars,
+            &mut working_vars,
         );
         let on_failure_visible = collect_visible(
             &dep.on_failure,
@@ -54,7 +54,7 @@ pub fn run(
             &mut state,
             0,
             deploy_file_dir,
-            &working_vars,
+            &mut working_vars,
         );
         visible.extend(
             on_failure_visible
@@ -68,7 +68,7 @@ pub fn run(
             &mut state,
             0,
             deploy_file_dir,
-            &working_vars,
+            &mut working_vars,
         );
         visible.extend(
             always_visible
@@ -95,7 +95,7 @@ fn collect_visible(
     state: &mut GateState,
     depth: usize,
     deploy_file_dir: &Path,
-    vars_map: &IndexMap<String, Value>,
+    vars_map: &mut IndexMap<String, Value>,
 ) -> Vec<(usize, String, Vec<String>)> {
     let mut out = Vec::new();
     for task in tasks {
@@ -110,6 +110,12 @@ fn collect_visible(
         out.push((depth, task_name, effective.clone()));
 
         if let Some(include_file) = &task.include_tasks {
+            if let Some(task_vars) = &task.vars {
+                for (key, value) in task_vars {
+                    let value_evaluated = utils::replace_placeholders_vars(value, vars_map);
+                    vars_map.insert(key.clone(), value_evaluated);
+                }
+            }
             let include_path = deploy_file_dir.join(include_file);
             let children = include_tasks::process(include_path.to_str().unwrap());
             let mut nested = collect_visible(

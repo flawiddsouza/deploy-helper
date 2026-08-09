@@ -1,0 +1,22 @@
+- name: List parameterized includes
+  hosts: test
+  vars:
+    environment_name: production
+  tasks:
+    - name: Include application tasks
+      include_tasks: list-tasks-include-vars.include.yml
+      vars:
+        application_name: api
+        deployment_name: "{{ environment_name }}-{{ application_name }}"
+
+    - name: Report {{ deployment_name }}
+      command: echo unreachable
+
+    - name: Produce runtime output
+      command: echo '{"status":"ready"}'
+      register: runtime_output
+
+    - name: Parse runtime output
+      vars:
+        runtime_output_parsed: "{{ runtime_output.stdout | from_json }}"
+      command: echo {{ runtime_output_parsed.status }}

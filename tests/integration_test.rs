@@ -1900,6 +1900,30 @@ mod execution {
             None,
         );
     }
+
+    #[test]
+    fn list_tasks_applies_include_vars_to_nested_tasks() {
+        run_test_check_with_flags(
+            "test-ymls/execution/list-tasks-include-vars.yml",
+            false,
+            &[],
+            "tests/servers/local.yml",
+            &["--list-tasks"],
+            |output| {
+                for task_name in [
+                    "Deploy production-api",
+                    "Verify production-api health",
+                    "Report production-api",
+                    "Parse runtime output",
+                ] {
+                    assert!(
+                        output.contains(task_name),
+                        "missing rendered included task '{task_name}':\n{output}"
+                    );
+                }
+            },
+        );
+    }
 }
 
 mod recovery {

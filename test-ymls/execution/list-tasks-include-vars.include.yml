@@ -1,0 +1,7 @@
+- name: Deploy {{ deployment_name }}
+  command: echo unreachable
+
+- name: Include verification tasks
+  include_tasks: list-tasks-include-vars.nested.yml
+  vars:
+    verification_name: "{{ deployment_name }} health"
