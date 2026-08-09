@@ -355,7 +355,7 @@ These can be set on any task:
 - `when: <expr>` - skip the task unless the expression evaluates true. An unguarded undefined value is an error, including as a bare condition or in a comparison. Guard optional values with `is defined` or supply a `default(...)` value.
 - `creates: <path>` - skip the task if `<path>` already exists on the target (checked with `test -e`). Idempotency guard for `shell:`/`command:`.
 - `removes: <path>` - skip the task if `<path>` does not exist on the target. Idempotency guard for `shell:`/`command:`.
-- `loop: [...]` - run the action once per item; the current item is exposed as `{{ item }}`. List items may be scalars or maps (access fields as `{{ item.field }}`).
+- `loop: [...]` - run the action once per item; the current item is exposed as `{{ item }}`. List items may be scalars or maps (access fields as `{{ item.field }}`). An exact expression such as `loop: "{{ helpers }}"` may supply the list from a variable.
 - `become: true` - run as root. `become_method:` selects the elevation tool (`sudo` default, `doas`, or `su`). Both fall back to the deployment-level `become:`/`become_method:`. See [cli.md#privilege-escalation-prompt](cli.md#privilege-escalation-prompt) for `become_password` handling.
 - `login_shell: true` - run `shell:`, `command:`, and `verify:` through a login shell. Falls back to the deployment-level `login_shell:`.
 - `shell_defaults: <line>` - override the deployment-level `shell_defaults:` for this task's `shell:` block. An empty string (`shell_defaults: ""`) disables the deployment default. Set on an `include_tasks:` task, the override applies to the included tasks (like `chdir:` and `login_shell:`).
@@ -396,6 +396,27 @@ Vars come from (later sources override earlier):
 3. Deployment-level `vars:`.
 4. Task-level `vars:`.
 5. `register:` outputs from earlier tasks.
+
+Deployment-level and task-level `vars:` accept strings, numbers, booleans,
+lists, and maps. Placeholders inside lists and maps are rendered recursively:
+
+```yaml
+vars:
+  helpers:
+    - src: scripts/database.py
+      dest: /usr/local/libexec/database.py
+    - src: scripts/uploads.py
+      dest: /usr/local/libexec/uploads.py
+tasks:
+  - name: Install helpers
+    loop: "{{ helpers }}"
+    copy:
+      src: "{{ item.src }}"
+      dest: "{{ item.dest }}"
+```
+
+When the whole value is an expression, it keeps the referenced value's type.
+For example, `helpers: "{{ shared_helpers }}"` remains a list.
 
 `{{ var }}` placeholders are rendered through MiniJinja in: task `name:`, deployment `name:`, deployment `chdir:`, task `chdir:`, all action bodies, and inventory `host:`/`user:`/`password:`/`ssh_key_path:`.
 

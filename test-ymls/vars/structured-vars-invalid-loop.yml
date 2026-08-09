@@ -1,0 +1,8 @@
+- name: Reject a non-list loop variable
+  hosts: test
+  vars:
+    helpers: not-a-list
+  tasks:
+    - name: Must not run
+      loop: "{{ helpers }}"
+      command: echo unreachable

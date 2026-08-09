@@ -581,6 +581,61 @@ mod vars {
     }
 
     #[test]
+    fn structured_vars_support_parameterized_loops() {
+        setup();
+        for inventory in ["tests/servers/local.yml", "tests/servers/remote.yml"] {
+            run_test_check(
+                "test-ymls/vars/structured-vars.yml",
+                false,
+                &[],
+                inventory,
+                |output| {
+                    assert!(
+                        output.contains(
+                            "database scripts/production-database.py /tmp/database.py True"
+                        ) && output
+                            .contains("uploads scripts/production-uploads.py /tmp/uploads.py True")
+                            && output.contains("parsed json-database")
+                            && output.contains("parsed json-uploads"),
+                        "structured vars should remain addressable inside the loop:\n{output}"
+                    );
+                },
+            );
+        }
+
+        run_test_check_with_flags(
+            "test-ymls/vars/structured-vars.yml",
+            false,
+            &[],
+            "tests/servers/local.yml",
+            &["--list-tasks"],
+            |output| {
+                assert!(
+                    output.contains("Install helpers for pizen"),
+                    "list-tasks should resolve structured include vars:\n{output}"
+                );
+            },
+        );
+    }
+
+    #[test]
+    fn loop_variable_must_resolve_to_a_list() {
+        run_test_check(
+            "test-ymls/vars/structured-vars-invalid-loop.yml",
+            true,
+            &[],
+            "tests/servers/local.yml",
+            |output| {
+                assert!(
+                    output.contains("loop must be a list or an expression that resolves to a list"),
+                    "invalid loop values should have a clear error:\n{output}"
+                );
+                assert!(!output.contains("> echo unreachable"));
+            },
+        );
+    }
+
+    #[test]
     fn missing_var_error() {
         setup();
         run_tests_for_both_inventories("test-ymls/vars/missing-var-error.yml", true, &[]);
@@ -1981,6 +2036,29 @@ mod execution {
             },
         );
     }
+
+    #[test]
+    fn list_tasks_hides_no_log_variable_errors() {
+        run_test_check_with_flags(
+            "test-ymls/execution/list-tasks-no-log-vars.yml",
+            true,
+            &[],
+            "tests/servers/local.yml",
+            &["--list-tasks"],
+            |output| {
+                assert!(
+                    output.contains("template value resolution failed (details hidden by no_log)"),
+                    "{}",
+                    output
+                );
+                assert!(
+                    !output.contains("secret-list-tasks-value-that-is-not-json"),
+                    "{}",
+                    output
+                );
+            },
+        );
+    }
 }
 
 mod recovery {
@@ -2101,6 +2179,60 @@ mod recovery {
                 assert!(output.contains("main_succeeded"), "{}", output);
                 assert!(!output.contains("on_failure_should_not_run"), "{}", output);
                 assert!(output.contains("exit status: 4"), "{}", output);
+            },
+        );
+    }
+
+    #[test]
+    fn loop_resolution_failure_honors_recovery_and_no_log() {
+        run_test_check(
+            "test-ymls/recovery/loop-resolution-failure.yml",
+            true,
+            &[],
+            "tests/servers/local.yml",
+            |output| {
+                assert!(
+                    output.contains("template value resolution failed (details hidden by no_log)"),
+                    "{}",
+                    output
+                );
+                assert!(output.contains("loop_on_failure_ran"), "{}", output);
+                assert!(output.contains("loop_always_ran"), "{}", output);
+                assert!(!output.contains("loop_task_should_not_run"), "{}", output);
+                assert!(
+                    !output.contains("secret-helper-value-that-is-not-json"),
+                    "{}",
+                    output
+                );
+            },
+        );
+    }
+
+    #[test]
+    fn task_vars_resolution_failure_honors_recovery_and_no_log() {
+        run_test_check(
+            "test-ymls/recovery/task-vars-resolution-failure.yml",
+            true,
+            &[],
+            "tests/servers/local.yml",
+            |output| {
+                assert!(
+                    output.contains("template value resolution failed (details hidden by no_log)"),
+                    "{}",
+                    output
+                );
+                assert!(output.contains("task_vars_on_failure_ran"), "{}", output);
+                assert!(output.contains("task_vars_always_ran"), "{}", output);
+                assert!(
+                    !output.contains("task_vars_task_should_not_run"),
+                    "{}",
+                    output
+                );
+                assert!(
+                    !output.contains("secret-task-vars-value-that-is-not-json"),
+                    "{}",
+                    output
+                );
             },
         );
     }

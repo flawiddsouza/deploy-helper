@@ -1,0 +1,10 @@
+- name: Hide list-task variable errors
+  hosts: test
+  vars:
+    helpers_json: secret-list-tasks-value-that-is-not-json
+  tasks:
+    - name: Include tasks with malformed data
+      no_log: true
+      include_tasks: list-tasks-no-log-vars.include.yml
+      vars:
+        helpers: "{{ helpers_json | from_json }}"

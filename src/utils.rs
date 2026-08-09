@@ -5,6 +5,7 @@ use serde::Deserialize;
 use serde_json::Value;
 use simple_expand_tilde::expand_tilde;
 use ssh2::Session;
+use std::fmt;
 use std::fs;
 use std::io::{self, prelude::*};
 use std::net::TcpStream;
@@ -135,40 +136,43 @@ pub(crate) fn template_environment() -> Environment<'static> {
     env
 }
 
-pub fn replace_placeholders(msg: &str, vars: &IndexMap<String, Value>) -> String {
+fn replace_placeholders_render(
+    msg: &str,
+    vars: &IndexMap<String, Value>,
+) -> Result<String, minijinja::Error> {
     let env = template_environment();
-    let template = env.template_from_str(msg).unwrap();
+    let template = env.template_from_str(msg)?;
     let mut context = IndexMap::new();
 
     for (key, value) in vars {
         context.insert(key.clone(), value.clone());
     }
 
-    // Debug print to verify context
-    // println!("Context: {:?}", context);
+    template.render(&context)
+}
 
-    template.render(&context).unwrap_or_else(|err| {
-        if let minijinja::ErrorKind::UndefinedError = err.kind() {
-            eprintln!(
-                "{}",
-                format!(
-                    "One or more of the variables are undefined in:\n\"{}\"",
-                    msg
-                )
-                .red()
-            );
-            eprintln!(
-                "{}",
-                format!(
-                    "Available vars (values redacted):\n{}",
-                    format_vars_structure_redacted(&context)
-                )
-                .red()
-            );
-        } else {
-            eprintln!("{}", format!("Error rendering template: {}", err).red());
-        }
+fn replace_placeholders_render_error(
+    error: &minijinja::Error,
+    msg: &str,
+    vars: &IndexMap<String, Value>,
+) -> String {
+    if let minijinja::ErrorKind::UndefinedError = error.kind() {
+        format!(
+            "One or more of the variables are undefined in:\n\"{}\"\nAvailable vars (values redacted):\n{}",
+            msg,
+            format_vars_structure_redacted(vars)
+        )
+    } else {
+        format!("Error rendering template: {}", error)
+    }
+}
 
+pub fn replace_placeholders(msg: &str, vars: &IndexMap<String, Value>) -> String {
+    replace_placeholders_render(msg, vars).unwrap_or_else(|error| {
+        eprintln!(
+            "{}",
+            replace_placeholders_render_error(&error, msg, vars).red()
+        );
         exit(1);
     })
 }
@@ -195,41 +199,161 @@ fn format_vars_structure_redacted(vars: &IndexMap<String, Value>) -> String {
     serde_json::to_string_pretty(&vars_redacted).expect("JSON values should always serialize")
 }
 
-pub fn replace_placeholders_vars(msg: &str, vars: &IndexMap<String, Value>) -> Value {
-    let rendered_str = replace_placeholders(msg, vars);
+struct TemplateValueError {
+    message: String,
+}
 
-    if uses_template_filter(msg, "from_json") {
-        serde_json::from_str(&rendered_str).unwrap_or_else(|err| {
-            eprintln!(
-                "{}",
-                format!("Error parsing JSON: {}:\n{}\nat {}", err, rendered_str, msg).red()
-            );
-            exit(1);
-        })
-    } else if uses_template_filter(msg, "from_env") {
-        parse_env_output(&rendered_str).unwrap_or_else(|err| {
-            eprintln!(
-                "{}",
-                format!("Error parsing env: {}\nat {}", err, msg).red()
-            );
-            exit(1);
-        })
-    } else {
-        Value::String(rendered_str)
+impl fmt::Display for TemplateValueError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.message)
     }
 }
 
-fn uses_template_filter(template: &str, filter: &str) -> bool {
+impl fmt::Debug for TemplateValueError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(self, formatter)
+    }
+}
+
+impl std::error::Error for TemplateValueError {}
+
+struct TaskError {
+    task_name: String,
+    source: Box<dyn std::error::Error>,
+}
+
+impl fmt::Display for TaskError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "Task '{}': {}", self.task_name, self.source)
+    }
+}
+
+impl fmt::Debug for TaskError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(self, formatter)
+    }
+}
+
+impl std::error::Error for TaskError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(self.source.as_ref())
+    }
+}
+
+pub(crate) fn task_error(
+    task_name: &str,
+    source: Box<dyn std::error::Error>,
+) -> Box<dyn std::error::Error> {
+    Box::new(TaskError {
+        task_name: task_name.to_string(),
+        source,
+    })
+}
+
+fn replace_placeholders_value_error(message: String, no_log: bool) -> Box<dyn std::error::Error> {
+    let message = if no_log {
+        "template value resolution failed (details hidden by no_log)".to_string()
+    } else {
+        message
+    };
+    Box::new(TemplateValueError { message })
+}
+
+fn replace_placeholders_vars_result(
+    msg: &str,
+    vars: &IndexMap<String, Value>,
+    no_log: bool,
+) -> Result<Value, Box<dyn std::error::Error>> {
+    let rendered_str = replace_placeholders_render(msg, vars).map_err(|error| {
+        replace_placeholders_value_error(
+            replace_placeholders_render_error(&error, msg, vars),
+            no_log,
+        )
+    })?;
+
+    if uses_template_filter(msg, "from_json") {
+        serde_json::from_str(&rendered_str).map_err(|error| {
+            replace_placeholders_value_error(
+                format!(
+                    "Error parsing JSON: {}:\n{}\nat {}",
+                    error, rendered_str, msg
+                ),
+                no_log,
+            )
+        })
+    } else if uses_template_filter(msg, "from_env") {
+        parse_env_output(&rendered_str).map_err(|error| {
+            let message = if no_log {
+                format!("Error parsing env: {}", error)
+            } else {
+                format!("Error parsing env: {}\nat {}", error, msg)
+            };
+            Box::new(TemplateValueError { message }) as Box<dyn std::error::Error>
+        })
+    } else if let Some(expression) = template_expression(msg) {
+        evaluate_template_expression(expression, vars).map_err(|error| {
+            replace_placeholders_value_error(
+                format!(
+                    "Error evaluating template expression: {}\nat {}",
+                    error, msg
+                ),
+                no_log,
+            )
+        })
+    } else {
+        Ok(Value::String(rendered_str))
+    }
+}
+
+pub(crate) fn replace_placeholders_value_result(
+    value: &Value,
+    vars: &IndexMap<String, Value>,
+    no_log: bool,
+) -> Result<Value, Box<dyn std::error::Error>> {
+    match value {
+        Value::String(value) => replace_placeholders_vars_result(value, vars, no_log),
+        Value::Array(values) => values
+            .iter()
+            .map(|value| replace_placeholders_value_result(value, vars, no_log))
+            .collect::<Result<Vec<_>, _>>()
+            .map(Value::Array),
+        Value::Object(values) => {
+            let mut values_resolved = serde_json::Map::new();
+            for (key, value) in values {
+                values_resolved.insert(
+                    key.clone(),
+                    replace_placeholders_value_result(value, vars, no_log)?,
+                );
+            }
+            Ok(Value::Object(values_resolved))
+        }
+        _ => Ok(value.clone()),
+    }
+}
+
+fn template_expression(template: &str) -> Option<&str> {
     let template = template.trim();
-    let Some(expression) = template
-        .strip_prefix("{{")
-        .and_then(|value| value.strip_suffix("}}"))
-    else {
+    let expression = template.strip_prefix("{{")?.strip_suffix("}}")?.trim();
+    if expression.contains("{{") || expression.contains("}}") {
+        None
+    } else {
+        Some(expression)
+    }
+}
+
+fn evaluate_template_expression(
+    expression: &str,
+    vars: &IndexMap<String, Value>,
+) -> Result<Value, Box<dyn std::error::Error>> {
+    let env = template_environment();
+    let value = env.compile_expression(expression)?.eval(vars)?;
+    Ok(serde_json::to_value(value)?)
+}
+
+fn uses_template_filter(template: &str, filter: &str) -> bool {
+    let Some(expression) = template_expression(template) else {
         return false;
     };
-    if expression.contains("{{") || expression.contains("}}") {
-        return false;
-    }
 
     let mut quote = None;
     let mut escaped = false;
@@ -1470,7 +1594,12 @@ mod tests {
             ("{{ 'printf value | from_env' }}", "printf value | from_env"),
         ] {
             assert_eq!(
-                replace_placeholders_vars(template, &vars),
+                replace_placeholders_value_result(
+                    &Value::String(template.to_string()),
+                    &vars,
+                    false,
+                )
+                .unwrap(),
                 Value::String(expected.to_string())
             );
         }
@@ -1478,6 +1607,85 @@ mod tests {
             "{{ manifest_output.stdout | from_env }}",
             "from_env"
         ));
+    }
+
+    #[test]
+    fn test_replace_placeholders_value_preserves_structure() {
+        let vars = IndexMap::from([(
+            "environment".to_string(),
+            Value::String("production".to_string()),
+        )]);
+        let value = serde_json::json!({
+            "helpers": [
+                {"src": "scripts/{{ environment }}-database.py", "enabled": true},
+                {"src": "scripts/{{ environment }}-uploads.py", "retries": 3}
+            ]
+        });
+
+        assert_eq!(
+            replace_placeholders_value_result(&value, &vars, false).unwrap(),
+            serde_json::json!({
+                "helpers": [
+                    {"src": "scripts/production-database.py", "enabled": true},
+                    {"src": "scripts/production-uploads.py", "retries": 3}
+                ]
+            })
+        );
+    }
+
+    #[test]
+    fn test_replace_placeholders_value_preserves_exact_expression_value() {
+        let vars = IndexMap::from([(
+            "helpers".to_string(),
+            serde_json::json!([{"name": "database"}, {"name": "uploads"}]),
+        )]);
+        assert_eq!(template_expression(" {{ helpers }} "), Some("helpers"));
+        assert_eq!(
+            replace_placeholders_value_result(
+                &Value::String("{{ helpers }}".to_string()),
+                &vars,
+                false,
+            )
+            .unwrap(),
+            vars["helpers"]
+        );
+    }
+
+    #[test]
+    fn test_replace_placeholders_value_parses_json_expression() {
+        let vars = IndexMap::from([(
+            "helpers_json".to_string(),
+            Value::String("[{\"name\":\"database\"},{\"name\":\"uploads\"}]".to_string()),
+        )]);
+        assert_eq!(
+            replace_placeholders_value_result(
+                &Value::String("{{ helpers_json | from_json }}".to_string()),
+                &vars,
+                false,
+            )
+            .unwrap(),
+            serde_json::json!([{"name": "database"}, {"name": "uploads"}])
+        );
+    }
+
+    #[test]
+    fn test_replace_placeholders_value_result_hides_json_with_no_log() {
+        let vars = IndexMap::from([(
+            "helpers_json".to_string(),
+            Value::String("secret-value-that-is-not-json".to_string()),
+        )]);
+        let error = replace_placeholders_value_result(
+            &Value::String("{{ helpers_json | from_json }}".to_string()),
+            &vars,
+            true,
+        )
+        .unwrap_err();
+        let message = error.to_string();
+        assert_eq!(
+            message,
+            "template value resolution failed (details hidden by no_log)"
+        );
+        assert!(!message.contains("secret-value-that-is-not-json"));
     }
 
     #[test]

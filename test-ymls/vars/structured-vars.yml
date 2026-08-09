@@ -1,0 +1,28 @@
+- name: Structured vars
+  hosts: test
+  vars:
+    environment_name: production
+    helpers_shared:
+      - name: database
+        src: scripts/{{ environment_name }}-database.py
+        dest: /tmp/database.py
+      - name: uploads
+        src: scripts/{{ environment_name }}-uploads.py
+        dest: /tmp/uploads.py
+    helper_defaults:
+      owner: pizen
+      enabled: true
+  tasks:
+    - name: Include helper tasks
+      include_tasks: structured-vars.include.yml
+      vars:
+        helpers: "{{ helpers_shared }}"
+        helper_options:
+          owner: "{{ helper_defaults.owner }}"
+          enabled: true
+    - name: Produce JSON helpers
+      command: "printf '[{\"name\":\"json-database\"},{\"name\":\"json-uploads\"}]'"
+      register: helpers_json
+    - name: Use JSON helpers
+      loop: "{{ helpers_json.stdout | from_json }}"
+      command: echo parsed {{ item.name }}

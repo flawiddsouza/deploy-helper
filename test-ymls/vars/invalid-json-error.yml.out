@@ -5,6 +5,6 @@ Executing task: test debug
 Registering output to: result
 
 Executing task: parse json and fail
-Error parsing JSON: EOF while parsing a string at line 1 column 17:
+Error: Task 'parse json and fail': Error parsing JSON: EOF while parsing a string at line 1 column 17:
 { "key": "value }
 at {{ result.stdout | from_json }}

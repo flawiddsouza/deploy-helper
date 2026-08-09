@@ -1,0 +1,20 @@
+- name: Recover after a loop resolution failure
+  hosts: test
+  tasks:
+    - name: Capture malformed helper data
+      no_log: true
+      command: printf 'secret-helper-value-that-is-not-json'
+      register: helpers_output
+
+    - name: Resolve malformed helper data
+      no_log: true
+      loop: "{{ helpers_output.stdout | from_json }}"
+      command: echo loop_task_should_not_run
+
+  on_failure:
+    - name: Recover from the loop failure
+      command: echo loop_on_failure_ran
+
+  always:
+    - name: Clean up after the loop failure
+      command: echo loop_always_ran

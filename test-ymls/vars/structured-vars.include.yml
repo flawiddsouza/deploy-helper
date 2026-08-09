@@ -1,0 +1,3 @@
+- name: Install helpers for {{ helper_options.owner }}
+  loop: "{{ helpers }}"
+  command: echo {{ item.name }} {{ item.src }} {{ item.dest }} {{ helper_options.enabled }}

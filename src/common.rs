@@ -64,10 +64,10 @@ pub struct Task {
     pub register: Option<String>,
     pub no_log: Option<bool>,
     pub debug: Option<Debug>,
-    pub vars: Option<IndexMap<String, String>>,
+    pub vars: Option<IndexMap<String, Value>>,
     pub chdir: Option<String>,
     pub when: Option<String>,
-    pub r#loop: Option<Vec<Value>>,
+    pub r#loop: Option<Value>,
     pub include_tasks: Option<String>,
     pub login_shell: Option<bool>,
     pub shell_defaults: Option<String>,
@@ -234,6 +234,15 @@ mod tests {
         let yaml = "name: Example\nshell: echo hi\n";
         let task: Task = serde_yaml::from_str(yaml).unwrap();
         assert_eq!(task.tags, None);
+    }
+
+    #[test]
+    fn task_vars_accept_structured_values() {
+        let yaml = "name: Example\nvars:\n  helpers:\n    - src: one.py\n      dest: /tmp/one.py\n  options:\n    enabled: true\nshell: echo hi\n";
+        let task: Task = serde_yaml::from_str(yaml).unwrap();
+        let vars = task.vars.unwrap();
+        assert!(vars["helpers"].is_array());
+        assert_eq!(vars["options"]["enabled"], Value::Bool(true));
     }
 
     #[test]

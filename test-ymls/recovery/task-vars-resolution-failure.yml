@@ -1,0 +1,21 @@
+- name: Recover after a task vars resolution failure
+  hosts: test
+  tasks:
+    - name: Capture malformed task vars data
+      no_log: true
+      command: printf 'secret-task-vars-value-that-is-not-json'
+      register: helpers_output
+
+    - name: Resolve malformed task vars data
+      no_log: true
+      vars:
+        helpers: "{{ helpers_output.stdout | from_json }}"
+      command: echo task_vars_task_should_not_run
+
+  on_failure:
+    - name: Recover from the task vars failure
+      command: echo task_vars_on_failure_ran
+
+  always:
+    - name: Clean up after the task vars failure
+      command: echo task_vars_always_ran

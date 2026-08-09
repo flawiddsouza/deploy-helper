@@ -30,7 +30,8 @@ pub fn run(
         crate::modules::vars_file::load_all(&dep.vars_files, deploy_file_dir, &mut working_vars)?;
         if let Some(dep_vars) = &dep.vars {
             for (key, value) in dep_vars {
-                let evaluated = utils::replace_placeholders_vars(value, &working_vars);
+                let evaluated =
+                    utils::replace_placeholders_value_result(value, &working_vars, false)?;
                 working_vars.insert(key.clone(), evaluated);
             }
         }
@@ -46,7 +47,7 @@ pub fn run(
             0,
             deploy_file_dir,
             &mut working_vars,
-        );
+        )?;
         let on_failure_visible = collect_visible(
             &dep.on_failure,
             &recovery_ancestor,
@@ -55,7 +56,7 @@ pub fn run(
             0,
             deploy_file_dir,
             &mut working_vars,
-        );
+        )?;
         visible.extend(
             on_failure_visible
                 .into_iter()
@@ -69,7 +70,7 @@ pub fn run(
             0,
             deploy_file_dir,
             &mut working_vars,
-        );
+        )?;
         visible.extend(
             always_visible
                 .into_iter()
@@ -96,7 +97,7 @@ fn collect_visible(
     depth: usize,
     deploy_file_dir: &Path,
     vars_map: &mut IndexMap<String, Value>,
-) -> Vec<(usize, String, Vec<String>)> {
+) -> Result<Vec<(usize, String, Vec<String>)>, Box<dyn std::error::Error>> {
     let mut out = Vec::new();
     for task in tasks {
         let task_name = utils::replace_placeholders(&task.name, vars_map);
@@ -107,12 +108,17 @@ fn collect_visible(
         ) {
             continue;
         }
-        out.push((depth, task_name, effective.clone()));
+        out.push((depth, task_name.clone(), effective.clone()));
 
         if let Some(include_file) = &task.include_tasks {
             if let Some(task_vars) = &task.vars {
                 for (key, value) in task_vars {
-                    let value_evaluated = utils::replace_placeholders_vars(value, vars_map);
+                    let value_evaluated = utils::replace_placeholders_value_result(
+                        value,
+                        vars_map,
+                        task.no_log.unwrap_or(false),
+                    )
+                    .map_err(|error| utils::task_error(&task_name, error))?;
                     vars_map.insert(key.clone(), value_evaluated);
                 }
             }
@@ -126,11 +132,11 @@ fn collect_visible(
                 depth + 1,
                 deploy_file_dir,
                 vars_map,
-            );
+            )?;
             out.append(&mut nested);
         }
     }
-    out
+    Ok(out)
 }
 
 #[cfg(test)]

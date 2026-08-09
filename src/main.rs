@@ -62,7 +62,7 @@ pub(crate) struct Deployment {
     pub(crate) become_method: Option<String>,
     #[serde(default)]
     pub(crate) vars_files: Vec<common::VarsFileSpec>,
-    pub(crate) vars: Option<IndexMap<String, String>>,
+    pub(crate) vars: Option<IndexMap<String, Value>>,
     pub(crate) tags: Option<Vec<String>>,
     pub(crate) tasks: Vec<common::Task>,
     #[serde(default)]
@@ -80,6 +80,24 @@ struct RunContext<'a> {
     filter_config: &'a filter::FilterConfig,
     filter_state: &'a mut filter::GateState,
     step_state: &'a mut modules::step::StepState,
+}
+
+fn resolve_loop_items(
+    loop_value: Option<&Value>,
+    vars_map: &IndexMap<String, Value>,
+    no_log: bool,
+) -> Result<Vec<Value>, Box<dyn std::error::Error>> {
+    let Some(loop_value) = loop_value else {
+        return Ok(vec![Value::Null]);
+    };
+
+    let loop_value_resolved =
+        utils::replace_placeholders_value_result(loop_value, vars_map, no_log)?;
+
+    match loop_value_resolved {
+        Value::Array(items) => Ok(items),
+        _ => Err("loop must be a list or an expression that resolves to a list".into()),
+    }
 }
 
 fn process_tasks(
@@ -158,7 +176,9 @@ fn process_tasks(
 
         if let Some(vars) = &task.vars {
             for (key, value) in vars {
-                let evaluated_value = utils::replace_placeholders_vars(&value, ctx.vars_map);
+                let evaluated_value =
+                    utils::replace_placeholders_value_result(value, ctx.vars_map, no_log)
+                        .map_err(|error| utils::task_error(&task_name, error))?;
                 ctx.vars_map.insert(key.clone(), evaluated_value);
             }
         }
@@ -225,7 +245,8 @@ fn process_tasks(
             }
         }
 
-        let loop_items = task.r#loop.clone().unwrap_or_else(|| vec![Value::Null]);
+        let loop_items = resolve_loop_items(task.r#loop.as_ref(), ctx.vars_map, no_log)
+            .map_err(|error| utils::task_error(&task_name, error))?;
 
         for item in loop_items {
             ctx.vars_map.shift_remove("item");
@@ -639,7 +660,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         if let Some(dep_vars) = &dep.vars {
             for (key, value) in dep_vars {
-                let evaluated_value = utils::replace_placeholders_vars(&value, &vars_map);
+                let evaluated_value =
+                    utils::replace_placeholders_value_result(value, &vars_map, false)?;
                 vars_map.insert(key.clone(), evaluated_value);
             }
         }
