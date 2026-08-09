@@ -1,0 +1,9 @@
+- name: "{{ deployment_name }}"
+  hosts: test
+  vars:
+    deployment_name: Deployment default
+    selected_value: deployment
+    selected_value_derived: "{{ selected_value }}-derived"
+  tasks:
+    - name: "Use {{ selected_value }} and {{ selected_value_derived }}"
+      command: echo "{{ selected_value }} {{ selected_value_derived }}"

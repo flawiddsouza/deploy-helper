@@ -22,19 +22,18 @@ pub fn run(
     deployments: &[crate::Deployment],
     config: &FilterConfig,
     deploy_file_dir: &Path,
-    vars_map: &IndexMap<String, Value>,
+    extra_vars_map: &IndexMap<String, Value>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut state = GateState::new(config);
-    let mut working_vars = vars_map.clone();
+    let mut working_vars = extra_vars_map.clone();
     for dep in deployments {
-        crate::modules::vars_file::load_all(&dep.vars_files, deploy_file_dir, &mut working_vars)?;
-        if let Some(dep_vars) = &dep.vars {
-            for (key, value) in dep_vars {
-                let evaluated =
-                    utils::replace_placeholders_value_result(value, &working_vars, false)?;
-                working_vars.insert(key.clone(), evaluated);
-            }
-        }
+        crate::modules::vars_file::load_all(
+            &dep.vars_files,
+            deploy_file_dir,
+            &mut working_vars,
+            extra_vars_map,
+        )?;
+        crate::apply_deployment_vars(dep.vars.as_ref(), &mut working_vars, extra_vars_map)?;
         let dep_name = utils::replace_placeholders(&dep.name, &working_vars);
         println!("Starting deployment: {}", dep_name);
         let ancestor = dep.tags.clone().unwrap_or_default();

@@ -391,11 +391,14 @@ too so names using their variables render correctly.
 
 Vars come from (later sources override earlier):
 
-1. `--extra-vars` / `-e` on the CLI (repeatable). See [cli.md#extra-vars](cli.md#extra-vars) for input forms.
-2. Deployment-level `vars_files:` in declaration order.
-3. Deployment-level `vars:`.
+1. Deployment-level `vars_files:` in declaration order.
+2. Deployment-level `vars:`.
+3. `--extra-vars` / `-e` on the CLI (repeatable). See [cli.md#extra-vars](cli.md#extra-vars) for input forms.
 4. Task-level `vars:`.
 5. `register:` outputs from earlier tasks.
+
+Deployment vars are rendered with CLI extra vars already in scope, so derived
+values use the CLI override too.
 
 Deployment-level and task-level `vars:` accept strings, numbers, booleans,
 lists, and maps. Placeholders inside lists and maps are rendered recursively:

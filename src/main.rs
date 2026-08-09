@@ -82,6 +82,24 @@ struct RunContext<'a> {
     step_state: &'a mut modules::step::StepState,
 }
 
+pub(crate) fn apply_deployment_vars(
+    dep_vars: Option<&IndexMap<String, Value>>,
+    vars_map: &mut IndexMap<String, Value>,
+    extra_vars_map: &IndexMap<String, Value>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if let Some(dep_vars) = dep_vars {
+        for (key, value) in dep_vars {
+            if extra_vars_map.contains_key(key) {
+                continue;
+            }
+            let value_evaluated = utils::replace_placeholders_value_result(value, vars_map, false)?;
+            vars_map.insert(key.clone(), value_evaluated);
+        }
+    }
+
+    Ok(())
+}
+
 fn resolve_loop_items(
     loop_value: Option<&Value>,
     vars_map: &IndexMap<String, Value>,
@@ -613,7 +631,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let deployment_docs: Vec<Vec<Deployment>> = utils::read_yaml_multi(deploy_file);
     let deployments = deployment_docs.into_iter().flatten().collect::<Vec<_>>();
 
-    let mut vars_map: IndexMap<String, Value> = IndexMap::new();
+    let mut extra_vars_map: IndexMap<String, Value> = IndexMap::new();
 
     for extra_vars in &extra_vars_list {
         if extra_vars.starts_with('@') {
@@ -621,7 +639,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let extra_vars_path = Path::new(extra_vars_file);
             if extra_vars_path.exists() {
                 let yaml_vars: IndexMap<String, Value> = utils::read_yaml(extra_vars_file);
-                vars_map.extend(yaml_vars);
+                extra_vars_map.extend(yaml_vars);
             } else {
                 eprintln!(
                     "{}",
@@ -631,12 +649,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         } else if extra_vars.starts_with('{') {
             let json_vars: IndexMap<String, Value> = serde_json::from_str(extra_vars)?;
-            vars_map.extend(json_vars);
+            extra_vars_map.extend(json_vars);
         } else {
             for var in extra_vars.split(' ') {
                 let parts: Vec<&str> = var.splitn(2, '=').collect();
                 if parts.len() == 2 {
-                    vars_map.insert(parts[0].to_string(), Value::String(parts[1].to_string()));
+                    extra_vars_map
+                        .insert(parts[0].to_string(), Value::String(parts[1].to_string()));
                 }
             }
         }
@@ -646,25 +665,29 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let deploy_file_dir = deploy_file_path.parent().unwrap_or(Path::new("."));
 
     if list_tasks_enabled {
-        modules::list_tasks::run(&deployments, &filter_config, deploy_file_dir, &vars_map)?;
+        modules::list_tasks::run(
+            &deployments,
+            &filter_config,
+            deploy_file_dir,
+            &extra_vars_map,
+        )?;
         return Ok(());
     }
 
+    let mut vars_map = extra_vars_map.clone();
     let mut filter_state = filter::GateState::new(&filter_config);
     let mut step_state = modules::step::StepState::new(step_enabled);
 
     for dep in deployments {
         step_state.reset_for_deployment();
 
-        modules::vars_file::load_all(&dep.vars_files, deploy_file_dir, &mut vars_map)?;
-
-        if let Some(dep_vars) = &dep.vars {
-            for (key, value) in dep_vars {
-                let evaluated_value =
-                    utils::replace_placeholders_value_result(value, &vars_map, false)?;
-                vars_map.insert(key.clone(), evaluated_value);
-            }
-        }
+        modules::vars_file::load_all(
+            &dep.vars_files,
+            deploy_file_dir,
+            &mut vars_map,
+            &extra_vars_map,
+        )?;
+        apply_deployment_vars(dep.vars.as_ref(), &mut vars_map, &extra_vars_map)?;
 
         let dep_name = utils::replace_placeholders(&dep.name, &vars_map);
         if let Some(chdir) = &dep.chdir {

@@ -38,7 +38,9 @@ deploy-helper deploy.yml -e @defaults.yml -e @overrides.yml -e debug=true
 - A JSON object string (must start with `{`) loads all keys at once.
 - `@<file>` loads a YAML file of vars.
 
-Extra vars sit at the bottom of the precedence stack. See [deployment-yaml.md#vars-and-templating](deployment-yaml.md#vars-and-templating) for the full merge order.
+Extra vars override deployment-level `vars_files:` and `vars:`. See
+[deployment-yaml.md#vars-and-templating](deployment-yaml.md#vars-and-templating)
+for the full merge order.
 
 ## Tags
 

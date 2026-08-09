@@ -9,7 +9,10 @@ pub fn load_all(
     specs: &[VarsFileSpec],
     deploy_file_dir: &Path,
     vars_map: &mut IndexMap<String, Value>,
+    vars_overrides: &IndexMap<String, Value>,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    vars_map.extend(vars_overrides.clone());
+
     for spec in specs {
         let src = utils::replace_placeholders(&spec.src, vars_map);
         let src_path = utils::resolve_src_path(deploy_file_dir, &src);
@@ -18,6 +21,7 @@ pub fn load_all(
         };
         let vars = parse_vars(&src, &decrypted)?;
         vars_map.extend(vars);
+        vars_map.extend(vars_overrides.clone());
     }
     Ok(())
 }

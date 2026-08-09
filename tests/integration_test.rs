@@ -502,6 +502,61 @@ mod vars {
 
     #[cfg(unix)]
     #[test]
+    fn extra_vars_override_vars_files_for_runs_and_task_listing() {
+        for flags in [
+            vec!["--extra-vars", "deployment_name=CLI secret_value=cli"],
+            vec![
+                "--extra-vars",
+                "deployment_name=CLI secret_value=cli",
+                "--list-tasks",
+            ],
+        ] {
+            let output = run_with_fake_sops("test-ymls/vars/sops-vars-file.yml", &flags);
+            assert!(
+                output.status.success(),
+                "vars_files override run failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            assert!(stdout.contains("Starting deployment: CLI"), "{stdout}");
+            assert!(
+                stdout.contains("Use cli with play-value"),
+                "extra vars should override vars_files:\n{stdout}"
+            );
+            assert!(!stdout.contains("SOPS deployment"), "{stdout}");
+            assert!(!stdout.contains("Use loaded-secret"), "{stdout}");
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn extra_vars_stay_in_scope_while_loading_vars_files() {
+        for flags in [
+            vec![
+                "--extra-vars",
+                "deployment_name=CLI selected_vars_file=secrets-override.enc.yml",
+            ],
+            vec![
+                "--extra-vars",
+                "deployment_name=CLI selected_vars_file=secrets-override.enc.yml",
+                "--list-tasks",
+            ],
+        ] {
+            let output = run_with_fake_sops("test-ymls/vars/extra-vars-vars-file-src.yml", &flags);
+            assert!(
+                output.status.success(),
+                "variable-backed vars_files source failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            assert!(stdout.contains("Starting deployment: CLI"), "{stdout}");
+            assert!(stdout.contains("Use loaded-secret"), "{stdout}");
+            assert!(!stdout.contains("missing.enc.yml"), "{stdout}");
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
     fn sops_vars_files_report_provider_errors_without_decrypted_output() {
         let output = run_with_fake_sops("test-ymls/vars/sops-vars-file-error.yml", &[]);
         assert!(!output.status.success());
@@ -731,6 +786,31 @@ mod vars {
             false,
             &["cat=wrong bat=2", "cat=1"],
         );
+    }
+
+    #[test]
+    fn extra_vars_override_deployment_vars_for_runs_and_task_listing() {
+        setup();
+        for inventory in ["tests/servers/local.yml", "tests/servers/remote.yml"] {
+            for flags in [Vec::new(), vec!["--list-tasks"]] {
+                run_test_check_with_flags(
+                    "test-ymls/vars/extra-vars-precedence.yml",
+                    false,
+                    &["deployment_name=CLI", "selected_value=cli"],
+                    inventory,
+                    &flags,
+                    |output| {
+                        assert!(output.contains("Starting deployment: CLI"), "{output}");
+                        assert!(
+                            output.contains("Use cli and cli-derived"),
+                            "deployment vars should render from the CLI override:\n{output}"
+                        );
+                        assert!(!output.contains("Deployment default"), "{output}");
+                        assert!(!output.contains("Use deployment"), "{output}");
+                    },
+                );
+            }
+        }
     }
 
     #[test]
