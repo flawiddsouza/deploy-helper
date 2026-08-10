@@ -5,6 +5,36 @@ use std::sync::Once;
 
 static INIT: Once = Once::new();
 
+#[test]
+fn version_uses_cargo_version_and_git_commit() {
+    let output = Command::new(env!("CARGO_BIN_EXE_deploy-helper"))
+        .arg("--version")
+        .output()
+        .expect("Failed to run deploy-helper --version");
+    assert!(output.status.success());
+
+    let version = String::from_utf8(output.stdout).expect("Version output was not UTF-8");
+    let prefix = format!("deploy-helper {} (", env!("CARGO_PKG_VERSION"));
+    assert!(
+        version.starts_with(&prefix),
+        "Unexpected version: {version}"
+    );
+
+    let commit = version
+        .trim()
+        .strip_prefix(&prefix)
+        .and_then(|value| value.strip_suffix(')'))
+        .expect("Version did not contain a parenthesized commit");
+    assert!(
+        commit == "unknown"
+            || (commit.len() == 12
+                && commit
+                    .chars()
+                    .all(|character| character.is_ascii_hexdigit())),
+        "Unexpected Git commit: {commit}"
+    );
+}
+
 fn build_docker_image() {
     let output = Command::new("docker")
         .args(&["build", "-t", "deploy-helper-test", "tests/"])

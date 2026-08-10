@@ -34,6 +34,16 @@ jobs:
       with:
         toolchain: stable
 
+    - name: Verify release tag matches Cargo version
+      shell: pwsh
+      run: |
+        $metadata = cargo metadata --locked --no-deps --format-version 1 | ConvertFrom-Json
+        $packageVersion = ($metadata.packages | Where-Object name -eq 'deploy-helper').version
+        $expectedTag = "v$packageVersion"
+        if ($env:GITHUB_REF_NAME -ne $expectedTag) {
+          throw "Release tag '$env:GITHUB_REF_NAME' does not match Cargo package version '$packageVersion'. Expected '$expectedTag'."
+        }
+
     - name: Build for macOS
       if: matrix.os == 'macos-latest'
       run: cargo build --release

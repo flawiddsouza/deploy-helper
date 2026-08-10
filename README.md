@@ -36,10 +36,12 @@ To set up a development environment for `deploy-helper`, follow these steps:
 ## Install from Source
 
 ```sh
-cargo install --path .
+cargo install --path . --locked --force
 ```
 
 Builds and installs the `deploy-helper` binary to your Cargo bin directory, making it available globally.
+The installed command reports both the package version and Git commit
+through `deploy-helper --version`.
 
 ## Deployment YAML
 

@@ -507,7 +507,12 @@ fn process_deployment_task_sections(
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let matches = ClapCommand::new("deploy-helper")
-        .version("1.0.3")
+        .version(concat!(
+            env!("CARGO_PKG_VERSION"),
+            " (",
+            env!("DEPLOY_HELPER_GIT_COMMIT"),
+            ")"
+        ))
         .about("Deployment helper tool")
         .arg(
             Arg::new("deploy_file")
