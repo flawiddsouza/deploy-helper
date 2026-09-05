@@ -687,6 +687,7 @@ pub fn setup_ssh_session(
     ssh_key_path: Option<&str>,
 ) -> Result<Session, Box<dyn std::error::Error>> {
     let tcp = TcpStream::connect((host, port))?;
+    tcp.set_nodelay(true)?;
     let mut session = Session::new()?;
     session.set_tcp_stream(tcp);
     session.handshake()?;
@@ -1180,6 +1181,30 @@ pub fn write_to_target(
     become_password: Option<&str>,
     mode: Option<&str>,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    write_to_target_with_sftp(
+        bytes,
+        dest,
+        is_localhost,
+        session,
+        become_enabled,
+        become_method,
+        become_password,
+        mode,
+        None,
+    )
+}
+
+fn write_to_target_with_sftp(
+    bytes: &[u8],
+    dest: &str,
+    is_localhost: bool,
+    session: Option<&Session>,
+    become_enabled: bool,
+    become_method: &str,
+    become_password: Option<&str>,
+    mode: Option<&str>,
+    sftp: Option<&ssh2::Sftp>,
+) -> Result<(), Box<dyn std::error::Error>> {
     // doas can't take a piped password (needs a tty), so it routes through a
     // PTY helper instead of the standard wrap_become_command path below.
     let doas_pw = if become_enabled && become_method == "doas" {
@@ -1256,6 +1281,16 @@ pub fn write_to_target(
         Ok(())
     } else {
         let session = session.ok_or("write_to_target: remote target requires session")?;
+        let sftp_owned;
+        let sftp = match sftp {
+            Some(sftp) => sftp,
+            None => {
+                sftp_owned = session
+                    .sftp()
+                    .map_err(|e| format!("Failed to open SFTP session: {}", e))?;
+                &sftp_owned
+            }
+        };
         if become_enabled {
             let nanos = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -1263,16 +1298,15 @@ pub fn write_to_target(
                 .unwrap_or(0);
             let tmp_path = format!("/tmp/deploy-helper-{}-{}", nanos, std::process::id());
 
-            let sftp = session
-                .sftp()
-                .map_err(|e| format!("Failed to open SFTP session: {}", e))?;
             {
                 // With a mode, the staged copy in /tmp is created 0600 so the
                 // content is never world-readable, not even before placement.
                 let mut remote = if mode.is_some() {
                     sftp.open_mode(
                         Path::new(&tmp_path),
-                        ssh2::OpenFlags::WRITE | ssh2::OpenFlags::CREATE | ssh2::OpenFlags::TRUNCATE,
+                        ssh2::OpenFlags::WRITE
+                            | ssh2::OpenFlags::CREATE
+                            | ssh2::OpenFlags::TRUNCATE,
                         0o600,
                         ssh2::OpenType::File,
                     )
@@ -1314,9 +1348,6 @@ pub fn write_to_target(
             }
             return Ok(());
         }
-        let sftp = session
-            .sftp()
-            .map_err(|e| format!("Failed to open SFTP session: {}", e))?;
         if let Some(m) = mode {
             // Stage next to dest with 0600 via SFTP, then chmod to the exact
             // mode (SFTP create modes are subject to the server's umask) and
@@ -1326,7 +1357,9 @@ pub fn write_to_target(
                 let mut remote = sftp
                     .open_mode(
                         Path::new(&dtmp),
-                        ssh2::OpenFlags::WRITE | ssh2::OpenFlags::CREATE | ssh2::OpenFlags::TRUNCATE,
+                        ssh2::OpenFlags::WRITE
+                            | ssh2::OpenFlags::CREATE
+                            | ssh2::OpenFlags::TRUNCATE,
                         0o600,
                         ssh2::OpenType::File,
                     )
@@ -1386,10 +1419,47 @@ fn collect_dir_tree(
     Ok(())
 }
 
+fn directory_hash_commands(files: &[(PathBuf, String)]) -> Vec<String> {
+    let mut commands = Vec::new();
+    let mut command = String::new();
+    for (index, (_, remote)) in files.iter().enumerate() {
+        let path = shell_escape(remote);
+        let next = format!("deploy_helper_copy_path={path}; if test -f \"$deploy_helper_copy_path\" && ! test -L \"$deploy_helper_copy_path\"; then printf '{index} '; sha256sum < \"$deploy_helper_copy_path\" 2>/dev/null || printf '\\n'; fi\n");
+        // Leave room for quoting by the shell wrapper and the SSH request header.
+        // Unusual paths too large for a check simply take the normal upload path.
+        if next.len() > 8192 {
+            continue;
+        }
+        if command.len() + next.len() > 8192 {
+            commands.push(std::mem::take(&mut command));
+        }
+        command.push_str(&next);
+    }
+    if !command.is_empty() {
+        commands.push(command);
+    }
+    commands
+}
+
+fn parse_directory_hashes(output: &str) -> std::collections::HashMap<usize, String> {
+    output
+        .lines()
+        .filter_map(|line| {
+            let mut words = line.split_whitespace();
+            let index = words.next()?.parse().ok()?;
+            let hash = words.next()?;
+            if hash.len() != 64 || !hash.bytes().all(|b| b.is_ascii_hexdigit()) {
+                return None;
+            }
+            Some((index, hash.to_ascii_lowercase()))
+        })
+        .collect()
+}
+
 /// Copy a local directory's CONTENTS into `dest_dir` on the target. Overlay semantics:
 /// creates missing dirs, overwrites matching files, leaves unrelated files alone (never
-/// deletes). Reuses write_to_target per file so become/SFTP handling is identical to a
-/// single-file copy.
+/// deletes). Remote copies compare hashes in batches and reuse one SFTP channel.
+/// Single-file placement still handles privilege escalation and protected writes.
 pub fn write_dir_to_target(
     src_dir: &Path,
     dest_dir: &str,
@@ -1431,11 +1501,39 @@ pub fn write_dir_to_target(
         return Err(format!("Failed to create dirs under {}: {}", dest_dir, detail).into());
     }
 
-    // 2. Write each file through the shared single-file path.
-    for (local, remote) in &files {
+    // Hash via stdin so filenames (including newlines) never enter the output.
+    // An unavailable hash utility falls back to uploading, without a new dependency.
+    let mut hashes = std::collections::HashMap::new();
+    if !is_localhost {
+        for command in directory_hash_commands(&files) {
+            let (out, _, _) = run_shell_on_target(
+                &command,
+                is_localhost,
+                session,
+                become_enabled,
+                become_method,
+                become_password,
+            )?;
+            hashes.extend(parse_directory_hashes(&out));
+        }
+    }
+    let mut sftp = None;
+    for (index, (local, remote)) in files.iter().enumerate() {
         let bytes =
             fs::read(local).map_err(|e| format!("Failed to read {}: {}", local.display(), e))?;
-        write_to_target(
+        if let Some(remote_hash) = hashes.get(&index) {
+            let hash = openssl::sha::sha256(&bytes)
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect::<String>();
+            if remote_hash == &hash {
+                continue;
+            }
+        }
+        if !is_localhost && sftp.is_none() {
+            sftp = Some(session.ok_or("remote copy requires session")?.sftp()?);
+        }
+        write_to_target_with_sftp(
             &bytes,
             remote,
             is_localhost,
@@ -1444,6 +1542,7 @@ pub fn write_dir_to_target(
             become_method,
             become_password,
             None,
+            sftp.as_ref(),
         )?;
     }
 
@@ -1457,6 +1556,39 @@ pub fn write_dir_to_target(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn directory_hashes_ignore_errors_and_preserve_file_indexes() {
+        let hash = "ab".repeat(32);
+        let output = format!("0 {hash}  -\n1 \nsha256sum: unavailable\n129 {hash}  -\n2 truncated\n");
+        let parsed = parse_directory_hashes(&output);
+        assert_eq!(parsed.len(), 2);
+        assert_eq!(parsed.get(&129), Some(&hash));
+        let files = vec![(PathBuf::from("local"), "/tmp/a'\nb $(false)".into())];
+        let commands = directory_hash_commands(&files);
+        assert!(commands[0].contains("printf '0 '"));
+        assert!(commands[0].contains(&shell_escape("/tmp/a'\nb $(false)")));
+        assert!(commands[0].contains("! test -L"));
+        let many_files = vec![files[0].clone(); 168];
+        let commands = directory_hash_commands(&many_files);
+        assert!(commands.len() > 1);
+        assert!(commands.iter().all(|command| command.len() <= 8192));
+        assert!(commands.last().unwrap().contains("printf '167 '"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn unavailable_directory_hash_utility_leaves_files_for_upload() {
+        let files = vec![(PathBuf::from("Cargo.toml"), "Cargo.toml".into())];
+        let command = &directory_hash_commands(&files)[0];
+        let output = Command::new("/bin/sh")
+            .args(["-c", command])
+            .env("PATH", "")
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+        assert!(parse_directory_hashes(&String::from_utf8(output.stdout).unwrap()).is_empty());
+    }
 
     #[test]
     fn test_format_vars_structure_redacted_preserves_shape_without_values() {

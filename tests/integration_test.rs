@@ -6,6 +6,18 @@ use std::sync::Once;
 static INIT: Once = Once::new();
 
 #[test]
+fn ssh_connections_are_reused_only_for_matching_identities() {
+    setup();
+    run_test_check(
+        "test-ymls/execution/ssh-connection-reuse.yml",
+        false,
+        &[],
+        "tests/servers/remote-templated.yml",
+        |output| assert!(output.contains("[ok] Check reused connection"), "{output}"),
+    );
+}
+
+#[test]
 fn version_uses_cargo_version_and_git_commit() {
     let output = Command::new(env!("CARGO_BIN_EXE_deploy-helper"))
         .arg("--version")
@@ -159,11 +171,20 @@ fn run_test_with_flags(
 
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    let stdout = stdout
+        .split_inclusive('\n')
+        .filter(|line| !line.starts_with("Task elapsed:") && !line.starts_with("Run summary:"))
+        .collect::<String>();
     let full_output = format!("{}{}", stdout, stderr);
 
     let expected_output =
         fs::read_to_string(&format!("{}.out", yml_file)).expect("Failed to read expected output");
-    assert_eq!(full_output, expected_output);
+    // Local line-based output and SSH byte streams can end with different numbers
+    // of newlines. Keep whitespace inside the output significant.
+    assert_eq!(
+        full_output.trim_end_matches('\n'),
+        expected_output.trim_end_matches('\n')
+    );
 }
 
 fn setup() {
@@ -1313,6 +1334,27 @@ mod privilege {
 
 mod file_ops {
     use super::*;
+
+    #[test]
+    fn copy_dir_skips_equal_files_and_repairs_changed_files_over_ssh() {
+        setup();
+        let suffix = format!("{}", std::process::id());
+        let dir = std::env::temp_dir().join(format!("deploy-helper-copy-batches-{suffix}"));
+        fs::create_dir(&dir).unwrap();
+        for index in 0..168 {
+            fs::write(dir.join(format!("{index:03}.txt")), format!("file-{index}\n")).unwrap();
+        }
+        let src_var = format!("copy_src={}", dir.display());
+        let dest_var = format!("copy_dest=/tmp/deploy-helper-copy-batches-{suffix}");
+        run_test_check(
+            "test-ymls/file-ops/copy-dir-unchanged.yml",
+            false,
+            &[&src_var, &dest_var],
+            "tests/servers/remote-ssh.yml",
+            |output| assert!(output.contains("[ok] Check copied files"), "{output}"),
+        );
+        fs::remove_dir_all(&dir).unwrap();
+    }
 
     #[test]
     fn copy_content_basic() {

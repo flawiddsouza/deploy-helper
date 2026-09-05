@@ -9,7 +9,7 @@
         - 3
 
     - name: loop inner
-      command: echo {{ item.name }} ({{ item.count }})
+      command: echo "{{ item.name }} ({{ item.count }})"
       loop:
         - { name: 'Test', count: 30 }
         - { name: 'Test 2', count: 25 }

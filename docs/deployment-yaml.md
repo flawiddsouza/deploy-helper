@@ -451,3 +451,15 @@ Keys must use letters, digits, and underscores, and cannot start with a digit.
 Blank lines and comment lines beginning with `#` are ignored. Values remain
 literal strings, may be empty, and may contain additional `=` characters.
 Repeated keys and malformed lines are errors.
+
+### Directory transfer performance
+
+Remote directory copies reuse one SFTP channel and compare SHA-256 hashes in
+batches before uploading files. Equal regular files keep their contents and
+modification times. Missing, changed and symlink destinations take the normal
+write path. Overlay copies still leave unrelated remote files alone. If the
+remote `sha256sum` command is unavailable, files are uploaded normally.
+
+Single-file copies and templates retain their existing write behavior, including
+exact mode correction and protected atomic placement when a mode is requested.
+Directory copies still reject `mode:`.

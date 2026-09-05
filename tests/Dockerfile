@@ -33,6 +33,8 @@ RUN printf '%s\n' \
 
 RUN ssh-keygen -A
 
+COPY mocks/ /root/tests/mocks/
+
 RUN echo "PasswordAuthentication yes" >> /etc/ssh/sshd_config && \
     echo "PermitRootLogin yes" >> /etc/ssh/sshd_config
 

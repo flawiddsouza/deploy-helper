@@ -181,3 +181,17 @@ Inject a secret and target a staging inventory:
 ```sh
 deploy-helper deploy.yml -i inventories/staging.yml -e @secrets.yml
 ```
+
+## Timings
+
+Tasks report elapsed seconds and their outcome, including execution failures and
+recovery tasks. Secret-redacted tasks use `[no_log]` in timing output. Includes
+report inclusive time; their nested tasks also report separately, so do not sum
+those durations. A loop is one task and its time includes all iterations.
+The final summary counts task outcomes and recovery tasks and reports wall time.
+Guards are timed; filtered tasks count as skipped without a duration.
+Fatal YAML or template loading errors still exit immediately and bypass timing
+summaries.
+
+SSH connections are reused across plays when the resolved address, port, user,
+password and key path match. A workflow invocation owns its connections.

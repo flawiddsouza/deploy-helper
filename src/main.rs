@@ -1,5 +1,6 @@
 mod common;
 mod modules;
+mod timing;
 mod utils;
 
 use clap::{Arg, Command as ClapCommand};
@@ -18,7 +19,7 @@ struct ServerConfig {
     hosts: IndexMap<String, TargetHost>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone, PartialEq, Eq, Hash)]
 #[serde(deny_unknown_fields)]
 struct TargetHost {
     host: String,
@@ -72,6 +73,8 @@ pub(crate) struct Deployment {
 }
 
 struct RunContext<'a> {
+    timing: &'a timing::RunTiming,
+    recovery: bool,
     is_localhost: bool,
     session: Option<&'a Session>,
     vars_map: &'a mut IndexMap<String, Value>,
@@ -142,11 +145,17 @@ fn process_tasks(
             ctx.filter_state,
         ) {
             filter::Decision::Run => {}
-            filter::Decision::Skip(_) => continue,
+            filter::Decision::Skip(_) => {
+                ctx.timing.skip();
+                continue;
+            }
         }
+
+        let mut task_timing = ctx.timing.task(&task_name, no_log, ctx.recovery);
 
         if !modules::when::process(&task.when, ctx.vars_map, no_log)? {
             println!("{}", format!("Skipping task: {}\n", task_name).yellow());
+            task_timing.skip();
             continue;
         }
 
@@ -159,6 +168,7 @@ fn process_tasks(
                     "{}",
                     format!("Skipping task: {} (creates: {} exists)\n", task_name, path).yellow()
                 );
+                task_timing.skip();
                 continue;
             }
         }
@@ -170,6 +180,7 @@ fn process_tasks(
                     "{}",
                     format!("Skipping task: {} (removes: {} absent)\n", task_name, path).yellow()
                 );
+                task_timing.skip();
                 continue;
             }
         }
@@ -182,6 +193,7 @@ fn process_tasks(
                         "{}",
                         format!("Skipping task: {} (step)\n", task_name).yellow()
                     );
+                    task_timing.skip();
                     continue;
                 }
                 modules::step::StepChoice::ContinueWithoutPrompt => {
@@ -430,7 +442,9 @@ fn process_tasks(
             }
         }
 
+        task_timing.succeeded = true;
         println!();
+        drop(task_timing);
     }
 
     Ok(())
@@ -486,7 +500,9 @@ fn process_deployment_task_sections(
         )
     };
 
+    ctx.recovery = false;
     let main_error = run(ctx, &dep.tasks, ancestor_tags).err();
+    ctx.recovery = true;
 
     let on_failure_error = if main_error.is_some() && !dep.on_failure.is_empty() {
         println!("{}", "Running on_failure tasks:\n".yellow());
@@ -679,6 +695,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
+    let timing = timing::RunTiming::new();
+    let mut sessions = std::collections::HashMap::new();
     let mut vars_map = extra_vars_map.clone();
     let mut filter_state = filter::GateState::new(&filter_config);
     let mut step_state = modules::step::StepState::new(step_enabled);
@@ -717,7 +735,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let mut become_password: Option<String> = None;
 
             if let Some(target_host) = server_config.hosts.get(host) {
-                let target_host = target_host.resolve(&vars_map);
+                let mut target_host = target_host.resolve(&vars_map);
+                target_host.port = Some(target_host.port.unwrap_or(22));
                 let is_localhost = target_host.host == "localhost";
                 let session = if !is_localhost {
                     let port = target_host.port.unwrap_or(22); // Use default port 22 if not provided
@@ -728,20 +747,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let password = target_host.password.as_deref();
                     let ssh_key_path = target_host.ssh_key_path.as_deref();
 
-                    Some(utils::setup_ssh_session(
-                        &target_host.host,
-                        port,
-                        user,
-                        password,
-                        ssh_key_path,
-                    )?)
+                    if !sessions.contains_key(&target_host) {
+                        let session = utils::setup_ssh_session(
+                            &target_host.host,
+                            port,
+                            user,
+                            password,
+                            ssh_key_path,
+                        )?;
+                        sessions.insert(target_host.clone(), session);
+                    }
+                    sessions.get(&target_host)
                 } else {
                     None
                 };
 
                 let mut ctx = RunContext {
                     is_localhost,
-                    session: session.as_ref(),
+                    session,
+                    timing: &timing,
+                    recovery: false,
                     vars_map: &mut vars_map,
                     deploy_file_dir,
                     become_password: &mut become_password,

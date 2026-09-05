@@ -1,0 +1,56 @@
+- name: Directory copy batches
+  hosts: test
+  shell_defaults: set -eu
+  tasks:
+    - name: Copy all files
+      copy:
+        src: "{{ copy_src }}"
+        dest: "{{ copy_dest }}"
+
+    - name: Mark existing files
+      shell: |
+        test -n "$SSH_CONNECTION"
+        touch -t 200001010000 '{{ copy_dest }}'/*.txt
+        stat -c '%Y' '{{ copy_dest }}/167.txt' > '{{ copy_dest }}/old-time'
+        printf keep > '{{ copy_dest }}/unrelated'
+
+    - name: Copy unchanged files
+      copy:
+        src: "{{ copy_src }}"
+        dest: "{{ copy_dest }}"
+
+    - name: Check unchanged times and introduce drift
+      shell: |
+        old_time=$(cat '{{ copy_dest }}/old-time')
+        for path in '{{ copy_dest }}'/*.txt; do
+          test "$(stat -c '%Y' "$path")" = "$old_time"
+        done
+        printf drift > '{{ copy_dest }}/000.txt'
+        rm '{{ copy_dest }}/001.txt' '{{ copy_dest }}/002.txt'
+        printf 'file-2\n' > '{{ copy_dest }}/symlink-target'
+        touch -t 200001010000 '{{ copy_dest }}/symlink-target'
+        ln -s '{{ copy_dest }}/symlink-target' '{{ copy_dest }}/002.txt'
+
+    - name: Repair changed and missing files
+      copy:
+        src: "{{ copy_src }}"
+        dest: "{{ copy_dest }}"
+
+    - name: Check copied files
+      shell: |
+        old_time=$(cat '{{ copy_dest }}/old-time')
+        index=0
+        for path in '{{ copy_dest }}'/*.txt; do
+          test "$(cat "$path")" = "file-$index"
+          if test "$index" -lt 3; then
+            test "$(stat -Lc '%Y' "$path")" != "$old_time"
+          else
+            test "$(stat -c '%Y' "$path")" = "$old_time"
+          fi
+          index=$((index + 1))
+        done
+        test "$index" = 168
+        test "$(cat '{{ copy_dest }}/unrelated')" = keep
+  always:
+    - name: Remove test files
+      shell: rm -rf '{{ copy_dest }}'

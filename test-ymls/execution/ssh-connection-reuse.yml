@@ -1,0 +1,32 @@
+- name: First connection
+  hosts: test
+  vars:
+    remote_host: 127.0.0.1
+    remote_user: root
+    remote_password: password
+  tasks:
+    - name: Remember connection
+      shell: printf '%s' "$SSH_CONNECTION"
+      register: first_connection
+
+- name: Different user
+  hosts: test
+  vars:
+    remote_user: nopass
+  tasks:
+    - name: Check separate identity and connection
+      shell: |
+        test "$(id -un)" = nopass &&
+        test -n "$SSH_CONNECTION" &&
+        test "$SSH_CONNECTION" != '{{ first_connection.stdout }}'
+
+- name: Original user again
+  hosts: test
+  vars:
+    remote_user: root
+  tasks:
+    - name: Check reused connection
+      shell: |
+        test "$(id -un)" = root &&
+        test -n "$SSH_CONNECTION" &&
+        test "$SSH_CONNECTION" = '{{ first_connection.stdout }}'

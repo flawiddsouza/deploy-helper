@@ -9,13 +9,13 @@ Executing task: loop
 3
 
 Executing task: loop inner
-> echo Test (30)
+> echo "Test (30)"
 Test (30)
-> echo Test 2 (25)
+> echo "Test 2 (25)"
 Test 2 (25)
-> echo Test 3 (10)
+> echo "Test 3 (10)"
 Test 3 (10)
-> echo Test 4 (40)
+> echo "Test 4 (40)"
 Test 4 (40)
 
 Executing task: loop (debug)
