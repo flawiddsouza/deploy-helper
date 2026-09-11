@@ -679,6 +679,45 @@ where
     results
 }
 
+// The largest TCP segment we invite the host to send us. A tunnel or VPN
+// hop between the two subnets often carries less than the usual 1500-byte
+// MTU, and when its "fragmentation needed" ICMP never reaches the host (or
+// the host ignores it), every segment larger than the hop's MTU is silently
+// dropped and retransmitted forever while acks, keepalives and small
+// packets keep flowing. The connection then looks healthy but delivers
+// nothing: a fresh SSH handshake never gets past key exchange, and a
+// running command's output freezes mid-line. Advertising a small MSS keeps
+// the host's segments under any realistic tunnel MTU (the IPv6 minimum is
+// 1280); the cost is a few percent more packets on file copies.
+#[cfg(unix)]
+const TCP_MAX_SEGMENT: u32 = 1200;
+
+fn connect_tcp(host: &str, port: u16) -> io::Result<TcpStream> {
+    use std::net::ToSocketAddrs;
+    let mut last_err = None;
+    for addr in (host, port).to_socket_addrs()? {
+        let socket = socket2::Socket::new(
+            socket2::Domain::for_address(addr),
+            socket2::Type::STREAM,
+            Some(socket2::Protocol::TCP),
+        )?;
+        // TCP_MAXSEG must be set before the handshake to end up in our SYN;
+        // Windows has no equivalent, so it keeps the default there.
+        #[cfg(unix)]
+        socket.set_mss(TCP_MAX_SEGMENT)?;
+        match socket.connect(&addr.into()) {
+            Ok(()) => return Ok(socket.into()),
+            Err(e) => last_err = Some(e),
+        }
+    }
+    Err(last_err.unwrap_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::NotFound,
+            format!("could not resolve host address: {}", host),
+        )
+    }))
+}
+
 pub fn setup_ssh_session(
     host: &str,
     port: u16,
@@ -686,7 +725,7 @@ pub fn setup_ssh_session(
     password: Option<&str>,
     ssh_key_path: Option<&str>,
 ) -> Result<Session, Box<dyn std::error::Error>> {
-    let tcp = TcpStream::connect((host, port))?;
+    let tcp = connect_tcp(host, port)?;
     tcp.set_nodelay(true)?;
     // A flow that goes quiet (long build, client not reading) can be dropped
     // by a NAT/firewall between the two subnets without either side hearing a
