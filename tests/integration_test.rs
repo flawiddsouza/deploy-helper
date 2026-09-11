@@ -1260,11 +1260,20 @@ mod privilege {
     #[test]
     fn become_su_with_password() {
         setup();
-        run_test(
+        // su writes its "Password: " prompt (no newline) to stderr and the
+        // command's "root" to stdout on two separate pipes; the merged
+        // terminal order is a genuine race, so assert the pieces are present
+        // rather than a fixed interleaving.
+        run_test_check(
             "test-ymls/become/become-su-with-password.yml",
             false,
             &["become_password=password"],
             "tests/servers/become-withpass.yml",
+            |output| {
+                assert!(output.contains("> whoami"), "{output}");
+                assert!(output.contains("root"), "{output}");
+                assert!(output.contains("Password:"), "{output}");
+            },
         );
     }
 

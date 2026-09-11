@@ -688,9 +688,36 @@ pub fn setup_ssh_session(
 ) -> Result<Session, Box<dyn std::error::Error>> {
     let tcp = TcpStream::connect((host, port))?;
     tcp.set_nodelay(true)?;
+    // A flow that goes quiet (long build, client not reading) can be dropped
+    // by a NAT/firewall between the two subnets without either side hearing a
+    // FIN or RST; the local socket then reads ESTABLISHED forever and a read
+    // on it never returns. TCP keepalive probes the socket after 15s idle and
+    // errors it once 3 probes 5s apart go unanswered (~30s; Windows can't set
+    // the probe count and uses its default of 10, ~65s). On Linux
+    // TCP_USER_TIMEOUT additionally caps the wait for any in-flight write, so
+    // a death mid-transfer is caught just as fast; other platforms fall back
+    // to the OS retransmit timeout there.
+    let tcp = {
+        let socket = socket2::Socket::from(tcp);
+        let keepalive = socket2::TcpKeepalive::new()
+            .with_time(std::time::Duration::from_secs(15))
+            .with_interval(std::time::Duration::from_secs(5));
+        #[cfg(not(windows))]
+        let keepalive = keepalive.with_retries(3);
+        socket.set_tcp_keepalive(&keepalive)?;
+        #[cfg(any(target_os = "linux", target_os = "android"))]
+        socket.set_tcp_user_timeout(Some(std::time::Duration::from_secs(30)))?;
+        TcpStream::from(socket)
+    };
     let mut session = Session::new()?;
     session.set_tcp_stream(tcp);
     session.handshake()?;
+    // SSH-level keepalive so a stateful, SSH-aware middlebox counts the flow
+    // as active. Kept well longer than the TCP keepalive idle window (15s) on
+    // purpose: sending SSH traffic resets that idle timer, so a shorter
+    // interval here would starve TCP keepalive of the idle time it needs to
+    // detect a dead peer on platforms without TCP_USER_TIMEOUT.
+    session.set_keepalive(true, 60);
 
     if let Some(key_path) = ssh_key_path {
         let resolved_key_path = expand_tilde(key_path).ok_or("Failed to resolve home directory")?;
@@ -706,6 +733,16 @@ pub fn setup_ssh_session(
     }
 
     Ok(session)
+}
+
+// Restores blocking mode when dropped, so a non-blocking read loop can bail
+// out with `?` without leaving the shared session in the wrong mode.
+struct BlockingGuard<'a>(&'a Session);
+
+impl Drop for BlockingGuard<'_> {
+    fn drop(&mut self) {
+        self.0.set_blocking(true);
+    }
 }
 
 pub fn execute_ssh_command(
@@ -750,40 +787,79 @@ pub fn execute_ssh_command(
     let mut stdout_buffer = [0; 1024];
     let mut stderr_buffer = [0; 1024];
 
+    // Poll both streams without blocking on either. A blocking read parks
+    // until *that* stream has data or the command exits, so a command that
+    // writes only stdout (or only stderr, like a docker build) showed its
+    // first chunk and then nothing until the very end. The guard puts the
+    // session back into blocking mode on every exit path, since everything
+    // else (scp, sftp, wait_close) expects it.
+    let blocking = BlockingGuard(session);
+    session.set_blocking(false);
+
+    // libssh2 reports a dead socket as a bare "transport read"; say what
+    // that means for the run. The remote command itself may well complete.
+    let connection_lost = |e: io::Error| -> Box<dyn std::error::Error> {
+        format!(
+            "connection to the host was lost while the command was running ({}); the command may still finish on the host",
+            e
+        )
+        .into()
+    };
+
     loop {
+        let mut progressed = false;
+
         match channel.read(&mut stdout_buffer) {
             Ok(read_bytes) => {
                 if read_bytes > 0 {
+                    progressed = true;
                     let output = String::from_utf8_lossy(&stdout_buffer[..read_bytes]);
                     stdout.push_str(&output);
                     if display_output {
                         print!("{}", output.white());
+                        let _ = io::stdout().flush();
                     }
                 }
             }
             Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => (),
-            Err(e) => return Err(e.into()),
+            Err(e) => return Err(connection_lost(e)),
         }
 
         match channel.stderr().read(&mut stderr_buffer) {
             Ok(read_bytes) => {
                 if read_bytes > 0 {
+                    progressed = true;
                     let error_output = String::from_utf8_lossy(&stderr_buffer[..read_bytes]);
                     stderr.push_str(&error_output);
                     if display_output {
                         print!("{}", error_output.red());
+                        let _ = io::stdout().flush();
                     }
                 }
             }
             Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => (),
-            Err(e) => return Err(e.into()),
+            Err(e) => return Err(connection_lost(e)),
         }
 
+        if progressed {
+            continue;
+        }
+        // eof() stays false while either stream still has unread data, so
+        // breaking here never drops output.
         if channel.eof() {
             break;
         }
+        // Only sends when the configured interval has elapsed; a send that
+        // can't get out right now is retried on the next pass.
+        match session.keepalive_send().map_err(io::Error::from) {
+            Ok(_) => (),
+            Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => (),
+            Err(e) => return Err(connection_lost(e)),
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
     }
 
+    drop(blocking);
     channel.wait_close()?;
     let exit_status = channel.exit_status()?;
 
