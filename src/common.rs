@@ -58,6 +58,7 @@ impl serde::de::Visitor<'_> for ModeVisitor {
 pub struct Task {
     pub name: String,
     pub shell: Option<String>,
+    pub powershell: Option<String>,
     pub command: Option<String>,
     pub creates: Option<String>,
     pub removes: Option<String>,

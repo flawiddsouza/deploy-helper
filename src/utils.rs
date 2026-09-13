@@ -910,31 +910,109 @@ pub fn execute_ssh_command(
     Ok((stdout, stderr, exit_status))
 }
 
+// How a local command string is run. `shell:` means POSIX `sh` on every
+// platform; a Windows user who wants their native shell declares `powershell:`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LocalInterpreter {
+    // Split into argv and exec'd directly, no shell (`command:`).
+    Direct,
+    // `sh -c` (`shell:` and the shell-backed file/service modules).
+    Sh,
+    // `pwsh` or `powershell`, run as a script file (`powershell:`).
+    PowerShell,
+}
+
+// Looks `name` up on PATH the way the executor will spawn it. Windows needs
+// the `.exe` suffix added; other platforms use the name as given.
+fn find_on_path(name: &str) -> Option<PathBuf> {
+    let file_name = if cfg!(windows) {
+        format!("{}.exe", name)
+    } else {
+        name.to_string()
+    };
+    std::env::var_os("PATH").and_then(|path| {
+        std::env::split_paths(&path)
+            .map(|dir| dir.join(&file_name))
+            .find(|candidate| candidate.is_file())
+    })
+}
+
+// The PowerShell interpreter `powershell:` tasks run under: PowerShell 7+
+// (`pwsh`) when present, otherwise Windows PowerShell (`powershell`).
+pub fn find_powershell() -> Option<PathBuf> {
+    find_on_path("pwsh").or_else(|| find_on_path("powershell"))
+}
+
+// Whether `sh` can be spawned, probed the same way the executor spawns it.
+pub fn sh_available() -> bool {
+    Command::new("sh")
+        .arg("-c")
+        .arg("true")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .is_ok()
+}
+
 pub fn execute_local_command(
     command: &str,
-    use_shell: bool,
+    interpreter: LocalInterpreter,
     display_output: bool,
     chdir: Option<&str>,
     login_shell: bool,
     env: Option<&IndexMap<String, String>>,
 ) -> Result<(String, String, i32), Box<dyn std::error::Error>> {
-    let mut cmd = if login_shell && !cfg!(windows) {
-        let sh_arg = format!("exec \"$SHELL\" -l -i -c {}", shell_escape(command));
-        let mut c = Command::new("sh");
-        c.arg("-c").arg(sh_arg);
-        c
-    } else if use_shell {
-        let mut c = Command::new("sh");
-        c.arg("-c").arg(command);
-        c
-    } else {
-        let parts =
-            shell_words::split(command).map_err(|e| format!("Failed to parse command: {}", e))?;
-        let mut cmd = Command::new(&parts[0]);
-        if parts.len() > 1 {
-            cmd.args(&parts[1..]);
+    // A `powershell:` block is run from a script file so multi-line constructs
+    // and exit codes behave exactly as they would for a saved .ps1 file.
+    // The BOM makes Windows PowerShell read the file as UTF-8.
+    let mut script_file: Option<PathBuf> = None;
+    let mut cmd = match interpreter {
+        LocalInterpreter::PowerShell => {
+            let exe = find_powershell().ok_or("neither pwsh nor powershell was found on PATH")?;
+            let nanos = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0);
+            let path = std::env::temp_dir().join(format!(
+                "deploy-helper-{}-{}.ps1",
+                nanos,
+                std::process::id()
+            ));
+            fs::write(&path, format!("\u{FEFF}{}", command))
+                .map_err(|e| format!("Failed to write {}: {}", path.display(), e))?;
+            script_file = Some(path.clone());
+            let mut c = Command::new(exe);
+            c.args([
+                "-NoProfile",
+                "-NonInteractive",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+            ])
+            .arg(&path);
+            c
         }
-        cmd
+        _ if login_shell && !cfg!(windows) => {
+            let sh_arg = format!("exec \"$SHELL\" -l -i -c {}", shell_escape(command));
+            let mut c = Command::new("sh");
+            c.arg("-c").arg(sh_arg);
+            c
+        }
+        LocalInterpreter::Sh => {
+            let mut c = Command::new("sh");
+            c.arg("-c").arg(command);
+            c
+        }
+        LocalInterpreter::Direct => {
+            let parts = shell_words::split(command)
+                .map_err(|e| format!("Failed to parse command: {}", e))?;
+            let mut cmd = Command::new(&parts[0]);
+            if parts.len() > 1 {
+                cmd.args(&parts[1..]);
+            }
+            cmd
+        }
     };
 
     if let Some(dir) = chdir {
@@ -947,6 +1025,17 @@ pub fn execute_local_command(
 
     cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
 
+    let result = run_local_child(cmd, display_output);
+    if let Some(path) = script_file {
+        let _ = fs::remove_file(path);
+    }
+    result
+}
+
+fn run_local_child(
+    mut cmd: Command,
+    display_output: bool,
+) -> Result<(String, String, i32), Box<dyn std::error::Error>> {
     let mut child = cmd.spawn()?;
     let stdout = child.stdout.take().ok_or("Failed to open stdout")?;
     let stderr = child.stderr.take().ok_or("Failed to open stderr")?;
@@ -986,20 +1075,21 @@ pub fn execute_local_command(
     Ok((stdout_str, stderr_str, exit_status))
 }
 
-// Returns true if `path` exists on the target (localhost or the remote session),
-// checked with `test -e`. Backs the `creates:`/`removes:` task guards.
+// Returns true if `path` exists on the target: a filesystem check on localhost,
+// `test -e` over the remote session. Backs the `creates:`/`removes:` task guards.
 pub fn path_exists_on_target(
     path: &str,
     is_localhost: bool,
     session: Option<&Session>,
 ) -> Result<bool, Box<dyn std::error::Error>> {
+    if is_localhost {
+        check_local_path(path)?;
+        return Ok(Path::new(path).exists());
+    }
     let cmd = format!("test -e {}", shell_escape(path));
-    let (_stdout, _stderr, exit_status) = if is_localhost {
-        execute_local_command(&cmd, true, false, None, false, None)?
-    } else {
-        let session = session.ok_or("path_exists_on_target: remote target requires session")?;
-        execute_ssh_command(session, &cmd, true, false, None, false)?
-    };
+    let session = session.ok_or("path_exists_on_target: remote target requires session")?;
+    let (_stdout, _stderr, exit_status) =
+        execute_ssh_command(session, &cmd, true, false, None, false)?;
     Ok(exit_status == 0)
 }
 
@@ -1232,7 +1322,7 @@ pub fn run_shell_on_target_with_context(
         command_with_env
     };
     if is_localhost {
-        execute_local_command(&cmd, true, false, chdir, login_shell, None)
+        execute_local_command(&cmd, LocalInterpreter::Sh, false, chdir, login_shell, None)
     } else {
         let session =
             session.ok_or("run_shell_on_target_with_context: remote target requires session")?;
@@ -1284,6 +1374,78 @@ fn write_local_doas(
     _mode: Option<&str>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     Err("doas with become_password is not supported on non-Unix platforms".into())
+}
+
+// Local paths are used as given, never translated. A POSIX absolute path on
+// Windows (`/tmp/x`) would resolve to the current drive's root, which is not
+// what the file meant, so it is rejected up front instead of silently landing
+// somewhere else.
+fn check_local_path(path: &str) -> Result<(), String> {
+    if cfg!(windows) && path.starts_with('/') {
+        return Err(format!(
+            "{}: POSIX absolute paths are not supported on a local Windows host; use a Windows path like C:/path or a relative path",
+            path
+        ));
+    }
+    Ok(())
+}
+
+// Writes `bytes` to `dest` on localhost without become. With a mode, the file
+// is staged next to dest under 0600, chmod-ed, and renamed into place, so the
+// content is never readable beyond `mode` at any point (matches the staged
+// shell write used for remote and privileged targets). Modes are a no-op on
+// Windows. Parent directories are not created.
+fn write_local_file(
+    bytes: &[u8],
+    dest: &str,
+    mode: Option<&str>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    check_local_path(dest)?;
+
+    let Some(mode) = mode else {
+        return fs::write(dest, bytes)
+            .map_err(|e| format!("Failed to write {}: {}", dest, e).into());
+    };
+
+    let tmp = mode_dest_tmp(dest);
+    // A stale temp file from an interrupted run may carry wider permissions;
+    // removing it first guarantees the staged copy is created fresh at 0600.
+    let _ = fs::remove_file(&tmp);
+
+    let mut options = fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let result = (|| -> Result<(), Box<dyn std::error::Error>> {
+        let mut file = options.open(&tmp).map_err(|e| {
+            format!("Failed to write {}: could not create staging file {}: {}", dest, tmp, e)
+        })?;
+        file.write_all(bytes)
+            .map_err(|e| format!("Failed to write {}: {}", tmp, e))?;
+        file.sync_all()
+            .map_err(|e| format!("Failed to flush {}: {}", tmp, e))?;
+        drop(file);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let bits = u32::from_str_radix(mode, 8)
+                .map_err(|_| format!("invalid mode '{}': not octal", mode))?;
+            fs::set_permissions(&tmp, fs::Permissions::from_mode(bits))
+                .map_err(|e| format!("Failed to chmod {} to {}: {}", tmp, mode, e))?;
+        }
+        #[cfg(not(unix))]
+        let _ = mode;
+        fs::rename(&tmp, dest)
+            .map_err(|e| format!("Failed to move {} into place at {}: {}", tmp, dest, e))?;
+        Ok(())
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(&tmp);
+    }
+    result
 }
 
 pub fn write_to_target(
@@ -1367,33 +1529,7 @@ fn write_to_target_with_sftp(
             }
             return Ok(());
         }
-        // Use sh to write the file so that path resolution (e.g. /tmp on Windows/MSYS2)
-        // is handled by the same shell that runs subsequent shell tasks, keeping paths
-        // consistent across all local operations.
-        let mut child = Command::new("sh")
-            .arg("-c")
-            .arg(write_pipe_command(dest, mode))
-            .stdin(Stdio::piped())
-            .stdout(Stdio::null())
-            .stderr(Stdio::piped())
-            .spawn()
-            .map_err(|e| format!("Failed to spawn sh for write to {}: {}", dest, e))?;
-        {
-            let stdin = child.stdin.take().ok_or("Failed to open stdin for write")?;
-            let mut stdin = stdin;
-            stdin
-                .write_all(bytes)
-                .map_err(|e| format!("Failed to write bytes to {}: {}", dest, e))?;
-        }
-        let status = child
-            .wait()
-            .map_err(|e| format!("Failed to wait on write process for {}: {}", dest, e))?;
-        if !status.success() {
-            return Err(
-                format!("Failed to write {}: sh exited with status {}", dest, status).into(),
-            );
-        }
-        Ok(())
+        write_local_file(bytes, dest, mode)
     } else {
         let session = session.ok_or("write_to_target: remote target requires session")?;
         let sftp_owned;
@@ -1589,31 +1725,37 @@ pub fn write_dir_to_target(
     collect_dir_tree(src_dir, src_dir, dest_dir, &mut dirs, &mut files)
         .map_err(|e| format!("Failed to read source dir {}: {}", src_dir.display(), e))?;
 
-    // 1. Create the directory skeleton (one mkdir -p for all dirs; -p makes order
-    // moot). Run it through the same execution paths the per-file writes use rather
-    // than Rust's fs, so path resolution (e.g. /tmp on Windows/MSYS2) and become
-    // handling stay identical: fs::create_dir_all would resolve /tmp to a different
-    // place than the `sh` that writes the files, leaving the writes with no parent dir.
-    let escaped: Vec<String> = dirs.iter().map(|d| shell_escape(d)).collect();
-    let mkdir = format!("mkdir -p {}", escaped.join(" "));
+    // 1. Create the directory skeleton. A plain local copy uses the filesystem
+    // directly, like its per-file writes; become and remote targets run one
+    // `mkdir -p` for all dirs (-p makes order moot) through the same execution
+    // path their per-file writes use, so privilege handling stays identical.
+    if is_localhost && !become_enabled {
+        check_local_path(dest_dir)?;
+        for dir in &dirs {
+            fs::create_dir_all(dir).map_err(|e| format!("Failed to create dir {}: {}", dir, e))?;
+        }
+    } else {
+        let escaped: Vec<String> = dirs.iter().map(|d| shell_escape(d)).collect();
+        let mkdir = format!("mkdir -p {}", escaped.join(" "));
 
-    let (out, stderr, code) = run_shell_on_target(
-        &mkdir,
-        is_localhost,
-        session,
-        become_enabled,
-        become_method,
-        become_password,
-    )?;
+        let (out, stderr, code) = run_shell_on_target(
+            &mkdir,
+            is_localhost,
+            session,
+            become_enabled,
+            become_method,
+            become_password,
+        )?;
 
-    if code != 0 {
-        // The doas-PTY path merges stderr into stdout, so fall back to it when stderr is empty.
-        let detail = if stderr.trim().is_empty() {
-            out.trim()
-        } else {
-            stderr.trim()
-        };
-        return Err(format!("Failed to create dirs under {}: {}", dest_dir, detail).into());
+        if code != 0 {
+            // The doas-PTY path merges stderr into stdout, so fall back to it when stderr is empty.
+            let detail = if stderr.trim().is_empty() {
+                out.trim()
+            } else {
+                stderr.trim()
+            };
+            return Err(format!("Failed to create dirs under {}: {}", dest_dir, detail).into());
+        }
     }
 
     // Hash via stdin so filenames (including newlines) never enter the output.
@@ -1671,6 +1813,89 @@ pub fn write_dir_to_target(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn write_local_scratch(tag: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("dh-wlf-{}-{}", tag, std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn write_local_file_without_mode_writes_and_overwrites() {
+        let dir = write_local_scratch("plain");
+        let dest = dir.join("out.txt");
+        let dest_str = dest.to_str().unwrap();
+        write_local_file(b"first", dest_str, None).unwrap();
+        assert_eq!(fs::read(&dest).unwrap(), b"first");
+        write_local_file(b"second", dest_str, None).unwrap();
+        assert_eq!(fs::read(&dest).unwrap(), b"second");
+        assert!(!Path::new(&mode_dest_tmp(dest_str)).exists());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn write_local_file_with_mode_replaces_dest_and_leaves_no_temp_file() {
+        let dir = write_local_scratch("mode");
+        let dest = dir.join(".env");
+        let dest_str = dest.to_str().unwrap();
+        fs::write(&dest, b"old").unwrap();
+        // A stale staged copy must not survive or leak into the result.
+        fs::write(mode_dest_tmp(dest_str), b"stale").unwrap();
+        write_local_file(b"TOKEN=abc\n", dest_str, Some("0600")).unwrap();
+        assert_eq!(fs::read(&dest).unwrap(), b"TOKEN=abc\n");
+        assert!(!Path::new(&mode_dest_tmp(dest_str)).exists());
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let bits = fs::metadata(&dest).unwrap().permissions().mode() & 0o777;
+            assert_eq!(bits, 0o600);
+            write_local_file(b"x", dest_str, Some("644")).unwrap();
+            let bits = fs::metadata(&dest).unwrap().permissions().mode() & 0o777;
+            assert_eq!(bits, 0o644);
+        }
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn write_local_file_does_not_create_parent_dirs() {
+        let dir = write_local_scratch("noparent");
+        let dest = dir.join("missing").join("out.txt");
+        let dest_str = dest.to_str().unwrap();
+        let err = write_local_file(b"x", dest_str, None)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("Failed to write"), "{}", err);
+        let err = write_local_file(b"x", dest_str, Some("0600"))
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("Failed to write") && err.contains("staging file"), "{}", err);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn write_local_file_rejects_posix_absolute_path_on_windows() {
+        let err = write_local_file(b"x", "/tmp/dh-never-written", None)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("POSIX absolute paths"), "{}", err);
+        assert!(!Path::new("/tmp/dh-never-written").exists());
+        // Windows paths in either spelling are fine.
+        assert!(check_local_path("C:/x").is_ok());
+        assert!(check_local_path("C:\\x").is_ok());
+        assert!(check_local_path("relative/x").is_ok());
+    }
+
+    #[test]
+    fn local_path_exists_is_a_filesystem_check() {
+        let dir = write_local_scratch("exists");
+        let file = dir.join("present");
+        fs::write(&file, b"").unwrap();
+        assert!(path_exists_on_target(file.to_str().unwrap(), true, None).unwrap());
+        assert!(!path_exists_on_target(dir.join("absent").to_str().unwrap(), true, None).unwrap());
+        let _ = fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn directory_hashes_ignore_errors_and_preserve_file_indexes() {

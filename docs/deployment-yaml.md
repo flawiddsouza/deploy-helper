@@ -119,7 +119,7 @@ positive `--tags` filter cannot silently exclude rollback or cleanup. Pass
 
 Unknown keys are rejected everywhere - deployments, tasks, action specs, and inventory hosts - so a typo like `dst:` for `dest:` is a parse error naming the bad key instead of silently doing nothing.
 
-Each task has a `name:` and one action key (`shell:`, `command:`, `template:`, `copy:`, `file:`, `env_file:`, `systemd:`, `verify:`, `debug:`, or `include_tasks:`). `debug:` is the one action that may be paired with another action on the same task; it runs first. Modifiers (`register:`, `when:`, `loop:`, `vars:`, `chdir:`, `login_shell:`, `become:`, `become_method:`, `tags:`) may be added to any task.
+Each task has a `name:` and one action key (`shell:`, `powershell:`, `command:`, `template:`, `copy:`, `file:`, `env_file:`, `systemd:`, `verify:`, `debug:`, or `include_tasks:`). `debug:` is the one action that may be paired with another action on the same task; it runs first. Modifiers (`register:`, `when:`, `loop:`, `vars:`, `chdir:`, `login_shell:`, `become:`, `become_method:`, `tags:`) may be added to any task.
 
 ### `shell:`
 
@@ -135,9 +135,30 @@ Runs a block of shell code through `sh -c`. Multi-line blocks share state (varia
 
 Compound constructs (`if`, `case`, `for`, `while`, `until`, `select`) are kept as one segment for display; other lines are echoed individually before the block runs.
 
+`shell:` means POSIX `sh` on every platform. On a local host it needs an `sh` on PATH (on Windows: Git for Windows, with its `usr\bin` folder added to PATH). The check runs before the first task: a run whose local tasks need `sh` stops up front with the fix named, rather than partway through. `verify:`, `file:`, `env_file:`, `systemd:`, and any `become:` task need it too; `command:` and unprivileged `copy:`/`template:` do not.
+
+### `powershell:`
+
+Runs a block of PowerShell on a local host. The block runs as one script file, so multi-line constructs and variables behave as in a saved `.ps1`. PowerShell 7+ (`pwsh`) is used when found on PATH, otherwise Windows PowerShell (`powershell`); neither found is an error before the first task.
+
+```yaml
+- name: Publish the site
+  chdir: C:/src/site
+  environment:
+    NODE_ENV: production
+  powershell: |
+    $version = git rev-parse --short HEAD
+    npm run build
+    Compress-Archive -Path dist -DestinationPath "site-$version.zip" -Force
+```
+
+Errors: `$ErrorActionPreference = 'Stop'` is injected ahead of the block, so a failing cmdlet stops the block and fails the task (the `set -e` of PowerShell). A failing native program does not stop the block by itself; the task fails with the exit code of the last native program the block ran, or with whatever the block passes to `exit`.
+
+`chdir:`, `environment:`, `register:`, `no_log:`, `when:`, `loop:`, and `creates:`/`removes:` apply. `shell_defaults:` and `login_shell:` do not. `become:` and remote hosts are not supported; a remote play with a `powershell:` task is rejected before the first task.
+
 ### `command:`
 
-Runs each line as a standalone exec (no shell, no state shared between lines). Use this when you don't need shell features.
+Runs each line as a standalone exec (no shell, no state shared between lines). Use this when you don't need shell features. It is the portable choice: it works the same on Linux, macOS and Windows, with no shell required.
 
 ```yaml
 - name: Restart services
@@ -203,7 +224,9 @@ Symlinks inside `src:` are followed, not preserved: a link is copied as the file
     mode: "0600"
 ```
 
-The value must be a string of octal digits (quote it: without a leading zero, YAML reads `600` as a number and the run fails with a hint). The file is staged next to `dest:` under a restrictive umask, chmod-ed, then atomically moved into place, so its content is never readable beyond the requested mode, not even between write and chmod. Not supported when `src:` is a directory.
+The value must be a string of octal digits (quote it: without a leading zero, YAML reads `600` as a number and the run fails with a hint). The file is staged next to `dest:` under a restrictive umask, chmod-ed, then atomically moved into place, so its content is never readable beyond the requested mode, not even between write and chmod. Not supported when `src:` is a directory. On a local Windows host the mode is accepted but has no effect.
+
+On a local host, `copy:` and `template:` write through the filesystem directly (no shell involved) unless `become:` is set. Paths are used as given: on Windows use `C:/path` or a relative path, since a POSIX absolute path like `/tmp/x` is rejected rather than silently translated. Parent directories of a single-file `dest:` are not created.
 
 ### `file:`
 
@@ -351,15 +374,15 @@ These can be set on any task:
 - `register: <name>` - capture the action's result (`stdout`, `stderr`, `rc`) into a var. `verify:` captures the final successful attempt. For `template:`, `copy:`, `file:`, `env_file:`, and `systemd:` the captured value is empty (`{stdout: "", stderr: "", rc: 0}`) since there is no command output.
 - `no_log: true` - suppress this task's command echo and output (and `debug:` output) so secrets aren't printed. It also hides `when:` and `verify:` failure details. `copy:`/`template:`/`file:`/`env_file:`/`systemd:` are unaffected since they never print their content. The `Executing task:` line still shows.
 - `vars:` - set vars before the action runs. Available for substitution in the same task.
-- `chdir: <path>` - working directory for `shell:`, `command:`, `verify:`, and `env_file:`. Falls back to the deployment-level `chdir:`.
+- `chdir: <path>` - working directory for `shell:`, `powershell:`, `command:`, `verify:`, and `env_file:`. Falls back to the deployment-level `chdir:`.
 - `when: <expr>` - skip the task unless the expression evaluates true. An unguarded undefined value is an error, including as a bare condition or in a comparison. Guard optional values with `is defined` or supply a `default(...)` value.
-- `creates: <path>` - skip the task if `<path>` already exists on the target (checked with `test -e`). Idempotency guard for `shell:`/`command:`.
-- `removes: <path>` - skip the task if `<path>` does not exist on the target. Idempotency guard for `shell:`/`command:`.
+- `creates: <path>` - skip the task if `<path>` already exists on the target (a filesystem check on a local host, `test -e` on a remote one). Idempotency guard for `shell:`/`powershell:`/`command:`.
+- `removes: <path>` - skip the task if `<path>` does not exist on the target. Idempotency guard for `shell:`/`powershell:`/`command:`.
 - `loop: [...]` - run the action once per item; the current item is exposed as `{{ item }}`. List items may be scalars or maps (access fields as `{{ item.field }}`). An exact expression such as `loop: "{{ helpers }}"` may supply the list from a variable.
-- `become: true` - run as root. `become_method:` selects the elevation tool (`sudo` default, `doas`, or `su`). Both fall back to the deployment-level `become:`/`become_method:`. See [cli.md#privilege-escalation-prompt](cli.md#privilege-escalation-prompt) for `become_password` handling.
-- `login_shell: true` - run `shell:`, `command:`, and `verify:` through a login shell. Falls back to the deployment-level `login_shell:`.
-- `shell_defaults: <line>` - override the deployment-level `shell_defaults:` for this task's `shell:` block. An empty string (`shell_defaults: ""`) disables the deployment default. Set on an `include_tasks:` task, the override applies to the included tasks (like `chdir:` and `login_shell:`).
-- `environment:` - environment variables for this task's `shell:`/`command:`/`verify:`, merged over the deployment-level map (task entries win per key). Set on an `include_tasks:` task, the merged map applies to the included tasks.
+- `become: true` - run as root. `become_method:` selects the elevation tool (`sudo` default, `doas`, or `su`). Both fall back to the deployment-level `become:`/`become_method:`. Not supported for `powershell:`. See [cli.md#privilege-escalation-prompt](cli.md#privilege-escalation-prompt) for `become_password` handling.
+- `login_shell: true` - run `shell:`, `command:`, and `verify:` through a login shell (not `powershell:`). Falls back to the deployment-level `login_shell:`.
+- `shell_defaults: <line>` - override the deployment-level `shell_defaults:` for this task's `shell:` block (not `powershell:`). An empty string (`shell_defaults: ""`) disables the deployment default. Set on an `include_tasks:` task, the override applies to the included tasks (like `chdir:` and `login_shell:`).
+- `environment:` - environment variables for this task's `shell:`/`powershell:`/`command:`/`verify:`, merged over the deployment-level map (task entries win per key). Set on an `include_tasks:` task, the merged map applies to the included tasks.
 - `tags: [...]` - task-level tags; merged with deployment and `include_tasks` tags into the task's effective tag set. See [cli.md#tags](cli.md#tags).
 
 ## Vars and Templating

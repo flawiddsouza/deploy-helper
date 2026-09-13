@@ -8,6 +8,8 @@ To install the latest version of `deploy-helper` on macOS or Linux, run the foll
 curl -sSL https://raw.githubusercontent.com/flawiddsouza/deploy-helper/main/install.sh | bash
 ```
 
+On Windows, build from source with `cargo install --path . --locked` (see Development). Local plays are supported on Windows: `command:`, `copy:`, `template:` and `powershell:` tasks need nothing extra, while `shell:` needs a POSIX `sh` on PATH (Git for Windows, with its `usr\bin` folder added). See [docs/deployment-yaml.md](docs/deployment-yaml.md#shell) for the details.
+
 ## Development
 
 To set up a development environment for `deploy-helper`, follow these steps:

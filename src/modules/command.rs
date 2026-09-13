@@ -5,12 +5,13 @@ use ssh2::Session;
 
 use crate::common;
 use crate::utils;
+use crate::utils::LocalInterpreter;
 
 fn handle_command_execution(
     is_localhost: bool,
     session: Option<&Session>,
     command: &str,
-    use_shell: bool,
+    interpreter: LocalInterpreter,
     display_output: bool,
     chdir: Option<&str>,
     register: Option<&String>,
@@ -19,7 +20,14 @@ fn handle_command_execution(
     env: Option<&IndexMap<String, String>>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let result = if is_localhost {
-        utils::execute_local_command(command, use_shell, display_output, chdir, login_shell, env)
+        utils::execute_local_command(
+            command,
+            interpreter,
+            display_output,
+            chdir,
+            login_shell,
+            env,
+        )
     } else {
         // Remote exec always goes through the login shell, so the environment
         // travels as export lines ahead of the command. Braces keep the whole
@@ -36,7 +44,7 @@ fn handle_command_execution(
         utils::execute_ssh_command(
             session.unwrap(),
             &remote_cmd,
-            use_shell,
+            interpreter != LocalInterpreter::Direct,
             display_output,
             chdir,
             login_shell,
@@ -222,13 +230,72 @@ pub fn process_shell_block(
         is_localhost,
         session,
         &exec_cmd,
-        true,
+        LocalInterpreter::Sh,
         display_output,
         task_chdir,
         register,
         login_shell,
         vars_map,
         None,
+    )
+}
+
+// Runs a `powershell:` block on a local host as one script, so multi-line
+// constructs and variables behave as in a saved .ps1 file. The prelude stops
+// the block on the first cmdlet error (the `set -e` of PowerShell); a native
+// program's failure does not stop the block, so the trailer turns the last
+// native exit code into the block's exit code. The block may also `exit N`.
+// `shell_defaults`, `login_shell` and `become` do not apply here.
+pub fn process_powershell_block(
+    source: &str,
+    environment: Option<&IndexMap<String, String>>,
+    is_localhost: bool,
+    task_chdir: Option<&str>,
+    register: Option<&String>,
+    vars_map: &mut IndexMap<String, Value>,
+    become_enabled: bool,
+    no_log: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if !is_localhost {
+        return Err(
+            "powershell: tasks run on local hosts only; use shell: or command: for remote hosts"
+                .into(),
+        );
+    }
+    if become_enabled {
+        return Err("become is not supported for powershell: tasks".into());
+    }
+
+    let env_rendered = match environment {
+        Some(env) if !env.is_empty() => Some(utils::render_env_values(env, vars_map)?),
+        _ => None,
+    };
+
+    let substituted_source = utils::replace_placeholders(source, vars_map);
+    if !no_log {
+        for line in substituted_source.lines().filter(|l| !l.trim().is_empty()) {
+            println!("{}", format!("> {}", line).magenta());
+        }
+    }
+
+    let exec_source = format!(
+        "$ErrorActionPreference = 'Stop'\n{}\nif ($LASTEXITCODE) {{ exit $LASTEXITCODE }}\n",
+        substituted_source
+    );
+
+    let display_output = register.is_none() && !no_log;
+
+    handle_command_execution(
+        is_localhost,
+        None,
+        &exec_source,
+        LocalInterpreter::PowerShell,
+        display_output,
+        task_chdir,
+        register,
+        false,
+        vars_map,
+        env_rendered.as_ref(),
     )
 }
 
@@ -297,7 +364,7 @@ pub fn process_command(
             is_localhost,
             session,
             &exec_cmd,
-            false,
+            LocalInterpreter::Direct,
             display_output,
             task_chdir,
             register,

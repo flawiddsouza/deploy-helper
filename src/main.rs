@@ -311,6 +311,19 @@ fn process_tasks(
                 )?;
             }
 
+            if let Some(script) = &task.powershell {
+                modules::command::process_powershell_block(
+                    script,
+                    task_environment.as_ref(),
+                    ctx.is_localhost,
+                    task_chdir.as_deref(),
+                    task.register.as_ref(),
+                    ctx.vars_map,
+                    task_become,
+                    no_log,
+                )?;
+            }
+
             if let Some(command) = &task.command {
                 let commands = utils::split_commands(command);
                 modules::command::process_command(
@@ -521,6 +534,107 @@ fn process_deployment_task_sections(
     finish_task_sections(main_error, on_failure_error, always_error)
 }
 
+// Calls `visit` on every task in `tasks`, descending into include_tasks files.
+fn visit_tasks(
+    tasks: &[common::Task],
+    deploy_file_dir: &Path,
+    visit: &mut dyn FnMut(&common::Task),
+) {
+    for task in tasks {
+        visit(task);
+        if let Some(include_file) = &task.include_tasks {
+            let include_path = deploy_file_dir.join(include_file);
+            let included = modules::include_tasks::process(include_path.to_str().unwrap());
+            visit_tasks(&included, deploy_file_dir, visit);
+        }
+    }
+}
+
+// Interpreters a run needs on the local machine are resolved once, before the
+// first task, so a missing one stops the run with the fix named instead of
+// failing partway through. Only tasks on local hosts count: a run made of
+// `command:` and unprivileged `copy:`/`template:` tasks needs neither, and a
+// Windows user is never asked to install something it does not use. Hosts
+// are matched on the inventory's raw `host:` value.
+fn check_local_interpreters(
+    deployments: &[Deployment],
+    server_config: &ServerConfig,
+    deploy_file_dir: &Path,
+) -> Result<(), String> {
+    let mut sh_needed_by: Option<String> = None;
+    let mut powershell_needed_by: Option<String> = None;
+
+    for dep in deployments {
+        let mut has_local = false;
+        let mut has_remote = false;
+        for host in dep.hosts.split(',').map(|s| s.trim()) {
+            match server_config.hosts.get(host) {
+                Some(target) if target.host == "localhost" => has_local = true,
+                Some(_) => has_remote = true,
+                None => {}
+            }
+        }
+        if !has_local && !has_remote {
+            continue;
+        }
+
+        let mut powershell_on_remote: Option<String> = None;
+        let mut visit = |task: &common::Task| {
+            let place = format!("task '{}' in deployment '{}'", task.name, dep.name);
+            if has_remote && task.powershell.is_some() && powershell_on_remote.is_none() {
+                powershell_on_remote = Some(place.clone());
+            }
+            if !has_local {
+                return;
+            }
+            if task.powershell.is_some() && powershell_needed_by.is_none() {
+                powershell_needed_by = Some(place.clone());
+            }
+            let become_enabled = task.r#become.or(dep.r#become).unwrap_or(false);
+            let needs_sh = task.shell.is_some()
+                || task.verify.is_some()
+                || task.env_file.is_some()
+                || task.file.is_some()
+                || task.systemd.is_some()
+                || (become_enabled
+                    && (task.copy.is_some() || task.template.is_some() || task.command.is_some()));
+            if needs_sh && sh_needed_by.is_none() {
+                sh_needed_by = Some(place);
+            }
+        };
+        for tasks in [&dep.tasks, &dep.on_failure, &dep.always] {
+            visit_tasks(tasks, deploy_file_dir, &mut visit);
+        }
+        if let Some(place) = powershell_on_remote {
+            return Err(format!(
+                "{} uses powershell:, which runs on local hosts only; use shell: or command: for remote hosts",
+                place
+            ));
+        }
+    }
+
+    if let Some(place) = sh_needed_by {
+        if !utils::sh_available() {
+            return Err(format!(
+                "{} needs a POSIX sh on the local host, but no sh was found on PATH.\n\
+                 Install one (on Windows: Git for Windows, then add its usr\\bin folder to PATH), \
+                 or switch the task to command: or powershell:.",
+                place
+            ));
+        }
+    }
+    if let Some(place) = powershell_needed_by {
+        if utils::find_powershell().is_none() {
+            return Err(format!(
+                "{} uses powershell:, but neither pwsh nor powershell was found on PATH.\n\
+                 Install PowerShell (https://aka.ms/powershell) or switch the task to shell: or command:.",
+                place
+            ));
+        }
+    }
+    Ok(())
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let matches = ClapCommand::new("deploy-helper")
         .version(concat!(
@@ -693,6 +807,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             &extra_vars_map,
         )?;
         return Ok(());
+    }
+
+    if let Err(message) = check_local_interpreters(&deployments, &server_config, deploy_file_dir) {
+        eprintln!("{}", message.red());
+        exit(1);
     }
 
     let timing = timing::RunTiming::new();
